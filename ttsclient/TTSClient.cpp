@@ -66,6 +66,11 @@ TTS_Error TTSClient::enableTTS(bool enable) {
     return m_priv->enableTTS(enable);
 }
 
+TTS_Error TTSClient::listVoices(std::string language, std::vector<std::string> &voices) {
+    CHECK_PRIV();
+    return m_priv->listVoices(language, voices);
+}
+
 TTS_Error TTSClient::setTTSConfiguration(Configuration &config) {
     CHECK_PRIV();
     return m_priv->setTTSConfiguration(config);
@@ -111,9 +116,29 @@ bool TTSClient::isActiveSession(uint32_t sessionid, bool forcefetch) {
     return m_priv->isActiveSession(sessionid, forcefetch);
 }
 
+TTS_Error TTSClient::setPreemptiveSpeak(uint32_t sessionid, bool preemptive) {
+    CHECK_PRIV();
+    return m_priv->setPreemptiveSpeak(sessionid, preemptive);
+}
+
+TTS_Error TTSClient::requestExtendedEvents(uint32_t sessionid, uint32_t extendedEvents) {
+    CHECK_PRIV();
+    return m_priv->requestExtendedEvents(sessionid, extendedEvents);
+}
+
 TTS_Error TTSClient::speak(uint32_t sessionid, SpeechData& data) {
     CHECK_PRIV();
     return m_priv->speak(sessionid, data);
+}
+
+TTS_Error TTSClient::pause(uint32_t sessionid, uint32_t speechid) {
+    CHECK_PRIV();
+    return m_priv->pause(sessionid, speechid);
+}
+
+TTS_Error TTSClient::resume(uint32_t sessionid, uint32_t speechid) {
+    CHECK_PRIV();
+    return m_priv->resume(sessionid, speechid);
 }
 
 TTS_Error TTSClient::abort(uint32_t sessionid) {
@@ -124,6 +149,16 @@ TTS_Error TTSClient::abort(uint32_t sessionid) {
 bool TTSClient::isSpeaking(uint32_t sessionid) {
     CHECK_PRIV();
     return m_priv->isSpeaking(sessionid);
+}
+
+TTS_Error TTSClient::getSpeechState(uint32_t sessionid, uint32_t speechid, SpeechState &state) {
+    CHECK_PRIV();
+    return m_priv->getSpeechState(sessionid, speechid, state);
+}
+
+TTS_Error TTSClient::clearAllPendingSpeeches(uint32_t sessionid) {
+    CHECK_PRIV();
+    return m_priv->clearAllPendingSpeeches(sessionid);
 }
 
 } // namespace TTS

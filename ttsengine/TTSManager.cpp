@@ -70,6 +70,7 @@ rtDefineObject(TTSManager, TTSEventSource);
 //Define TTSManager object methods
 rtDefineMethod(TTSManager, enableTTS);
 rtDefineMethod(TTSManager, isTTSEnabled);
+rtDefineMethod(TTSManager, listVoices);
 rtDefineMethod(TTSManager, setConfiguration);
 rtDefineMethod(TTSManager, isSessionActiveForApp);
 
@@ -359,12 +360,42 @@ rtError TTSManager::isTTSEnabled(bool &enabled) {
     return RT_OK;
 }
 
+rtError TTSManager::listVoices(rtValue language, rtObjectRef &voices) {
+    bool returnCurrentConfiguration = false;
+    std::string key = std::string("voice_for_"); // return all voices
+
+    if(language.isEmpty() || language.toString().isEmpty()) {
+        returnCurrentConfiguration = true; // return voice for the configured language
+        key = m_defaultConfiguration.language();
+    } else if(language != "*") {
+        key += language.toString().cString(); // return voices for only the passed language
+    }
+
+    rtArrayObject *voicearray = new rtArrayObject;
+    if(returnCurrentConfiguration) {
+        TTSLOG_INFO("Retrieving voice configured for language=%s", key.c_str());
+        voicearray->pushBack(m_defaultConfiguration.voice());
+    } else {
+        TTSLOG_INFO("Retrieving voice list for language key=%s", key.c_str());
+        auto it = m_defaultConfiguration.m_others.begin();
+        while(it != m_defaultConfiguration.m_others.end()) {
+            if(it->first.find(key.c_str()) == 0)
+                voicearray->pushBack(rtString(it->second.c_str()));
+            ++it;
+        }
+    }
+
+    voices = voicearray;
+    return RT_OK;
+}
+
 rtError TTSManager::setConfiguration(rtObjectRef configuration) {
     TTSLOG_INFO("Setting Default Configuration");
 
     double d;
     uint8_t ui;
     rtString s;
+    rtString v = m_defaultConfiguration.voice();
     CHECK_RT_INPUT_AND_UPDATE(configuration, "ttsEndPoint", s, m_defaultConfiguration.setEndPoint(s));
     CHECK_RT_INPUT_AND_UPDATE(configuration, "ttsEndPointSecured", s, m_defaultConfiguration.setSecureEndPoint(s));
     CHECK_RT_INPUT_AND_UPDATE(configuration, "language", s, m_defaultConfiguration.setLanguage(s));
@@ -372,28 +403,36 @@ rtError TTSManager::setConfiguration(rtObjectRef configuration) {
     CHECK_RT_INPUT_AND_UPDATE(configuration, "volume", d, m_defaultConfiguration.setVolume(d));
     CHECK_RT_INPUT_AND_UPDATE(configuration, "rate", ui, m_defaultConfiguration.setRate(ui));
 
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if(m_defaultConfiguration.endPoint().isEmpty() && !m_defaultConfiguration.secureEndPoint().isEmpty())
-        m_defaultConfiguration.setEndPoint(m_defaultConfiguration.secureEndPoint());
-    else if(m_defaultConfiguration.secureEndPoint().isEmpty() && !m_defaultConfiguration.endPoint().isEmpty())
-        m_defaultConfiguration.setSecureEndPoint(m_defaultConfiguration.endPoint());
-    else if(m_defaultConfiguration.endPoint().isEmpty() && m_defaultConfiguration.secureEndPoint().isEmpty())
-        TTSLOG_WARNING("TTSEndPoint & SecureTTSEndPoints are empty!!!");
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if(m_defaultConfiguration.endPoint().isEmpty() && !m_defaultConfiguration.secureEndPoint().isEmpty())
+            m_defaultConfiguration.setEndPoint(m_defaultConfiguration.secureEndPoint());
+        else if(m_defaultConfiguration.secureEndPoint().isEmpty() && !m_defaultConfiguration.endPoint().isEmpty())
+            m_defaultConfiguration.setSecureEndPoint(m_defaultConfiguration.endPoint());
+        else if(m_defaultConfiguration.endPoint().isEmpty() && m_defaultConfiguration.secureEndPoint().isEmpty())
+            TTSLOG_WARNING("TTSEndPoint & SecureTTSEndPoints are empty!!!");
 
-    TTSLOG_INFO("Default config updated, endPoint=%s, secureEndPoint=%s, lang=%s, voice=%s, vol=%lf, rate=%u",
-            m_defaultConfiguration.endPoint().cString(),
-            m_defaultConfiguration.secureEndPoint().cString(),
-            m_defaultConfiguration.language().cString(),
-            m_defaultConfiguration.voice().cString(),
-            m_defaultConfiguration.volume(),
-            m_defaultConfiguration.rate());
+        TTSLOG_INFO("Default config updated, endPoint=%s, secureEndPoint=%s, lang=%s, voice=%s, vol=%lf, rate=%u",
+                m_defaultConfiguration.endPoint().cString(),
+                m_defaultConfiguration.secureEndPoint().cString(),
+                m_defaultConfiguration.language().cString(),
+                m_defaultConfiguration.voice().cString(),
+                m_defaultConfiguration.volume(),
+                m_defaultConfiguration.rate());
 
-    // Pass newly set configuration to all the sessions
-    // WARN : This might over write the session specific configurations (TBD)
-    ID_Session_Map::iterator it = m_sessionMap.begin();
-    while(it != m_sessionMap.end()) {
-        it->second->setConfiguration(m_defaultConfiguration);;
-        ++it;
+        // Pass newly set configuration to all the sessions
+        // WARN : This might over write the session specific configurations (TBD)
+        ID_Session_Map::iterator it = m_sessionMap.begin();
+        while(it != m_sessionMap.end()) {
+            it->second->setConfiguration(m_defaultConfiguration);;
+            ++it;
+        }
+    }
+
+    if(v != m_defaultConfiguration.voice()) {
+        Event d("voice_changed");
+        d.set("voice", m_defaultConfiguration.voice());
+        sendEvent(d);
     }
 
     return RT_OK;

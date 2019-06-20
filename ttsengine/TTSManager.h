@@ -42,11 +42,13 @@ public:
     // TTS Global APIs
     rtMethod1ArgAndNoReturn("enableTTS", enableTTS, bool);
     rtMethodNoArgAndReturn("isTTSEnabled", isTTSEnabled, bool);
+    rtMethod1ArgAndReturn("listVoices", listVoices, rtValue, rtObjectRef);
     rtMethod1ArgAndNoReturn("setConfiguration", setConfiguration, rtObjectRef);
     rtMethod1ArgAndReturn("isSessionActiveForApp", isSessionActiveForApp, uint32_t, bool);
 
     rtError enableTTS(bool enable);
     rtError isTTSEnabled(bool &enabled);
+    rtError listVoices(rtValue language, rtObjectRef &voices);
     rtError setConfiguration(rtObjectRef configuration);
     rtError isSessionActiveForApp(uint32_t appid, bool &active);
 

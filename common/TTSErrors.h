@@ -28,6 +28,23 @@ enum ResourceAllocationPolicy {
     OPEN         // Any client can use the resource without any prior reservation
 };
 
+enum SpeechState {
+    SPEECH_PENDING = 0,
+    SPEECH_IN_PROGRESS,
+    SPEECH_PAUSED,
+    SPEECH_NOT_FOUND
+};
+
+enum ExtendedEvents {
+    EXT_EVENT_PAUSED            = 1 << 0,
+    EXT_EVENT_RESUMED           = 1 << 1,
+    EXT_EVENT_CANCELLED         = 1 << 2,
+    EXT_EVENT_INTERRUPTED       = 1 << 3,
+    EXT_EVENT_NETWORK_ERROR     = 1 << 4,
+    EXT_EVENT_PLAYBACK_ERROR    = 1 << 5,
+    EXT_EVENT_ALL               = 0xFFFF
+};
+
 enum TTS_Error {
     TTS_OK = 0,
     TTS_FAIL,
@@ -42,6 +59,7 @@ enum TTS_Error {
     TTS_APP_NOT_FOUND,
     TTS_POLICY_VIOLATION,
     TTS_OBJECT_DESTROYED = 1010,
+    TTS_SPEECH_NOT_FOUND,
 };
 
 }

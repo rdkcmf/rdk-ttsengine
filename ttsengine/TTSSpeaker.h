@@ -29,6 +29,8 @@
 #include <thread>
 #include <condition_variable>
 
+#include "TTSErrors.h"
+
 // --- //
 
 namespace TTS {
@@ -57,6 +59,7 @@ public:
     void setVoice(const rtString voice);
     void setVolume(const double volume);
     void setRate(const uint8_t rate);
+    void setPreemptiveSpeak(const bool preemptive);
 
     const rtString &endPoint() { return m_ttsEndPoint; }
     const rtString &secureEndPoint() { return m_ttsEndPointSecured; }
@@ -86,6 +89,12 @@ public:
     virtual TTSConfiguration* configuration() = 0;
     virtual void willSpeak(uint32_t speech_id, rtString text) = 0;
     virtual void spoke(uint32_t speech_id, rtString text) = 0;
+    virtual void paused(uint32_t speech_id) = 0;
+    virtual void resumed(uint32_t speech_id) = 0;
+    virtual void cancelled(std::vector<uint32_t> &speeches) = 0;
+    virtual void interrupted(uint32_t speech_id) = 0;
+    virtual void networkerror(uint32_t speech_id) = 0;
+    virtual void playbackerror(uint32_t speech_id) = 0;
 };
 
 struct SpeechData {
@@ -114,16 +123,22 @@ public:
     // Speak Functions
     int speak(TTSSpeakerClient* client, uint32_t id, rtString text, bool secure); // Formalize data to speak API
     bool isSpeaking(const TTSSpeakerClient *client = NULL);
+    SpeechState getSpeechState(const TTSSpeakerClient *client, uint32_t id);
+    void clearAllSpeechesFrom(const TTSSpeakerClient *client, std::vector<uint32_t> &speechesCancelled);
+    void cancelCurrentSpeech();
     bool reset();
+
+    void pause(uint32_t id = 0);
+    void resume(uint32_t id = 0);
 
 private:
 
     // Private Data
     TTSConfiguration m_defaultConfig;
     TTSSpeakerClient *m_clientSpeaking;
-    SpeechData m_tmpSpeechData;
+    uint32_t m_currentSpeechId;
     bool m_isSpeaking;
-    uint32_t  m_textId;
+    bool m_isPaused;
 
     std::mutex m_stateMutex;
     std::condition_variable m_condition;
@@ -142,6 +157,7 @@ private:
     GstElement *m_source;
     GstElement *m_audioSink;
     bool        m_pipelineError;
+    bool        m_networkError;
     bool        m_runThread;
     bool        m_flushed;
     bool        m_isEOS;

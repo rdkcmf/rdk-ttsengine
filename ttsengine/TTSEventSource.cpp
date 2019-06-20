@@ -25,6 +25,7 @@ namespace TTS {
 
 rtDefineObject(TTSEventSource, rtObject);
 rtDefineMethod(TTSEventSource, setListener);
+rtDefineMethod(TTSEventSource, delListener);
 
 rtError Emit::addListenerOrQueue(rtString eventName, const rtFunctionRef &f)
 {
