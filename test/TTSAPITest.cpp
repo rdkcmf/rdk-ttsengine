@@ -25,6 +25,7 @@
 #include <unistd.h>
 #include <string.h>
 
+#include <sstream>
 #include <iostream>
 #include <fstream>
 #include <map>
@@ -63,6 +64,10 @@ public:
     virtual void onTTSStateChanged(bool enabled) {
         TTSLOG_INFO("TTS is %s", enabled ? "enabled" : "disabled");
     }
+
+    virtual void onVoiceChanged(std::string voice) {
+        TTSLOG_INFO("TTS voice got changed to %s", voice.c_str());
+    }
 };
 
 class MySessionCallback : public TTSSessionCallback {
@@ -79,12 +84,36 @@ public:
         TTSLOG_WARNING("AppId=%d, SessionId=%d", appId, sessionId);
     }
 
-    virtual void onSpeechStart(uint32_t appId, uint32_t sessionId, SpeechData &) {
-        TTSLOG_WARNING("AppId=%d, SessionId=%d", appId, sessionId);
+    virtual void onSpeechStart(uint32_t appId, uint32_t sessionId, SpeechData &sd) {
+        TTSLOG_WARNING("AppId=%d, SessionId=%d, SpeechId=%d", appId, sessionId, sd.id);
     };
 
-    virtual void onSpeechComplete(uint32_t appId, uint32_t sessionId, SpeechData &) {
-        TTSLOG_WARNING("AppId=%d, SessionId=%d", appId, sessionId);
+    virtual void onSpeechPause(uint32_t appId, uint32_t sessionId, uint32_t speechId) {
+        TTSLOG_WARNING("AppId=%d, SessionId=%d, SpeechId=%d", appId, sessionId, speechId);
+    };
+
+    virtual void onSpeechResume(uint32_t appId, uint32_t sessionId, uint32_t speechId) {
+        TTSLOG_WARNING("AppId=%d, SessionId=%d, SpeechId=%d", appId, sessionId, speechId);
+    };
+
+    virtual void onSpeechCancelled(uint32_t appId, uint32_t sessionId, uint32_t speechId) {
+        TTSLOG_WARNING("AppId=%d, SessionId=%d, SpeechId=%d", appId, sessionId, speechId);
+    };
+
+    virtual void onSpeechInterrupted(uint32_t appId, uint32_t sessionId, uint32_t speechId) {
+        TTSLOG_WARNING("AppId=%d, SessionId=%d, SpeechId=%d", appId, sessionId, speechId);
+    };
+
+    virtual void onNetworkError(uint32_t appId, uint32_t sessionId, uint32_t speechId) {
+        TTSLOG_WARNING("AppId=%d, SessionId=%d, SpeechId=%d", appId, sessionId, speechId);
+    };
+
+    virtual void onPlaybackError(uint32_t appId, uint32_t sessionId, uint32_t speechId) {
+        TTSLOG_WARNING("AppId=%d, SessionId=%d, SpeechId=%d", appId, sessionId, speechId);
+    };
+
+    virtual void onSpeechComplete(uint32_t appId, uint32_t sessionId, SpeechData &sd) {
+        TTSLOG_WARNING("AppId=%d, SessionId=%d, SpeechId=%d", appId, sessionId, sd.id);
     };
 };
 
@@ -117,12 +146,39 @@ struct MyStream {
     }
 
     template<class T>
-    bool getInput(T &var, const char *prompt = NULL) {
-        if(prompt)
-            cout << prompt;
-        *in >> var;
-        if(in == myfile)
-            cout << var << endl;
+    bool getInput(T &var, const char *prompt = NULL, bool console = false) {
+        stringstream ss;
+        char cstr[512];
+        string str;
+
+        istream *tin = in;
+        if(console)
+            in = &cin;
+
+        do {
+            if(prompt)
+                cout << prompt;
+            try {
+                if(in == myfile && in->eof())
+                    in = &cin;
+                in->getline(cstr, sizeof(cstr)-1);
+            } catch(...) {
+                if(in == myfile)
+                    in = &cin;
+            }
+
+            str = cstr;
+            if(in == myfile)
+                cout << cstr << endl;
+
+            if((str.find('#') == string::npos || !str.erase(str.find('#')).empty()) && !str.empty()) {
+                ss.str(str);
+                ss >> var;
+                break;
+            }
+        } while(1);
+        in = tin;
+
         return true;
     }
 
@@ -130,6 +186,30 @@ private:
     ifstream *myfile;
     istream *in;
 };
+
+#define OPT_ENABLE_TTS          1
+#define OPT_VOICE_LIST          2
+#define OPT_SET_CONFIG          3
+#define OPT_TTS_ENABLED         4
+#define OPT_SESSION_ACTIVE      5
+#define OPT_ACQUIRE_RESOURCE    6
+#define OPT_CLAIM_RESOURCE      7
+#define OPT_RELEASE_RESOURCE    8
+#define OPT_CREATE_SESSION      9
+#define OPT_IS_ACTIVE_SESSION   10
+#define OPT_SET_PREEMPTIVE      11
+#define OPT_REQ_EXT_EVENTS      12
+#define OPT_SPEAK               13
+#define OPT_PAUSE               14
+#define OPT_RESUME              15
+#define OPT_ABORT               16
+#define OPT_IS_SPEAKING         17
+#define OPT_SPEECH_STATE        18
+#define OPT_CLEAR_ALL           19
+#define OPT_DESTROY_SESSION     20
+#define OPT_EXIT                21
+#define OPT_BLOCK_TILL_INPUT    22
+#define OPT_SLEEP               23
 
 int main(int argc, char *argv[]) {
     std::map<uint32_t, AppInfo*> appInfoMap;
@@ -155,25 +235,34 @@ int main(int argc, char *argv[]) {
             if(argc == 1 || flag) {
                 flag = false;
                 if(counter == 0) {
-                cout << endl;
-                cout << "------------------------" << endl;
-                cout << "1.enableTTS" << endl;
-                cout << "2.setTTSConfiguration" << endl;
-                cout << "3.isTTSEnabled" << endl;
-                cout << "4.isSessionActiveForApp" << endl;
-                cout << "-" << endl;
-                cout << "5.acquireResource" << endl;
-                cout << "6.claimResource" << endl;
-                cout << "7.releaseResource" << endl;
-                cout << "-" << endl;
-                cout << "8.createSession" << endl;
-                cout << "9.isActiveSession" << endl;
-                cout << "10.speak" << endl;
-                cout << "11.abort" << endl;
-                cout << "12.isSpeaking" << endl;
-                cout << "13.destroySession" << endl;
-                cout << "14.exit" << endl;
-                cout << "------------------------" << endl;
+                    cout << endl;
+                    cout << "------------------------" << endl;
+                    cout << OPT_ENABLE_TTS          << ".enableTTS" << endl;
+                    cout << OPT_VOICE_LIST          << ".listVoices" << endl;
+                    cout << OPT_SET_CONFIG          << ".setTTSConfiguration" << endl;
+                    cout << OPT_TTS_ENABLED         << ".isTTSEnabled" << endl;
+                    cout << OPT_SESSION_ACTIVE      << ".isSessionActiveForApp" << endl;
+                    cout << "-" << endl;
+                    cout << OPT_ACQUIRE_RESOURCE    << ".acquireResource" << endl;
+                    cout << OPT_CLAIM_RESOURCE      << ".claimResource" << endl;
+                    cout << OPT_RELEASE_RESOURCE    << ".releaseResource" << endl;
+                    cout << "-" << endl;
+                    cout << OPT_CREATE_SESSION      << ".createSession" << endl;
+                    cout << OPT_IS_ACTIVE_SESSION   << ".isActiveSession" << endl;
+                    cout << OPT_SET_PREEMPTIVE      << ".setPreemptiveSpeech" << endl;
+                    cout << OPT_REQ_EXT_EVENTS      << ".requestExtendedEvents" << endl;
+                    cout << OPT_SPEAK               << ".speak" << endl;
+                    cout << OPT_PAUSE               << ".pause" << endl;
+                    cout << OPT_RESUME              << ".resume" << endl;
+                    cout << OPT_ABORT               << ".abort" << endl;
+                    cout << OPT_IS_SPEAKING         << ".isSpeaking" << endl;
+                    cout << OPT_SPEECH_STATE        << ".getSpeechState" << endl;
+                    cout << OPT_CLEAR_ALL           << ".clearAllPendingSpeeches" << endl;
+                    cout << OPT_DESTROY_SESSION     << ".destroySession" << endl;
+                    cout << OPT_EXIT                << ".exit" << endl;
+                    cout << OPT_BLOCK_TILL_INPUT    << ".dummyInput" << endl;
+                    cout << OPT_SLEEP               << ".sleep" << endl;
+                    cout << "------------------------" << endl;
                 } else {
                     cout << endl;
                 }
@@ -188,7 +277,7 @@ int main(int argc, char *argv[]) {
                 cin.ignore();
                 counter = 1;
             }
-        } while(g_connectedToTTS && !(choice >= 1 && choice <= 15));
+        } while(g_connectedToTTS && !(choice >= OPT_ENABLE_TTS && choice <= OPT_SLEEP));
 
         bool res = 0;
         int sid = 0;
@@ -197,17 +286,34 @@ int main(int argc, char *argv[]) {
         string stext;
         string appname;
         int sessionid = 0;
+        std::string language;
+        std::vector<string> voices;
         Configuration config;
         SpeechData sdata;
+        SpeechState sstate;
         switch(choice) {
-            case 1:
+            case OPT_ENABLE_TTS:
                 int enable;
                 stream.getInput(enable, "1.Enable/0.Disable TTS : ");
                 error = client->enableTTS(enable);
                 validateReturn(error, 100);
                 break;
 
-            case 2:
+            case OPT_VOICE_LIST:
+                stream.getInput(language, "Enter the language [\"*\" - all voices, \".\" - current voice]: ");
+                error = client->listVoices(language == "." ? string() : language, voices);
+                validateReturn(error, 0);
+
+                cout << "Supported voices for language [" + language + "]" << endl;
+                for(uint32_t i = 0; i < voices.size(); i++) {
+                    if(i > 0)
+                        cout << ", ";
+                    cout << voices[i];
+                }
+                cout << endl;
+                break;
+
+            case OPT_SET_CONFIG:
                 stream.getInput(config.language, "Enter language [en-US/es-MX] : ");
                 stream.getInput(config.voice, "Enter voice [carol/Angelica] : ");
                 stream.getInput(config.volume, "Enter volume [0.0-100.0] : ");
@@ -217,36 +323,36 @@ int main(int argc, char *argv[]) {
                 validateReturn(error, 0);
                 break;
 
-            case 3:
+            case OPT_TTS_ENABLED:
                 res = client->isTTSEnabled(true);
                 cout << "TTS is " << (res ? "Enabled" : "Disabled") << endl;
                 break;
 
-            case 4:
+            case OPT_SESSION_ACTIVE:
                 stream.getInput(appid, "Enter app id : ");
                 res = client->isSessionActiveForApp(appid);
                 cout << "App " << appid << (res ? " has session & active" : " has no session / inactive") << endl;
                 break;
 
-            case 5:
+            case OPT_ACQUIRE_RESOURCE:
                 stream.getInput(appid, "Enter app id : ");
                 error = client->acquireResource(appid);
                 validateReturn(error, 150);
                 break;
 
-            case 6:
+            case OPT_CLAIM_RESOURCE:
                 stream.getInput(appid, "Enter app id : ");
                 error = client->claimResource(appid);
                 validateReturn(error, 150);
                 break;
 
-            case 7:
+            case OPT_RELEASE_RESOURCE:
                 stream.getInput(appid, "Enter app id : ");
                 error = client->releaseResource(appid);
                 validateReturn(error, 150);
                 break;
 
-            case 8:
+            case OPT_CREATE_SESSION:
                 stream.getInput(appid, "Enter app id : ");
                 stream.getInput(appname, "Enter app name : ");
                 sessionid = client->createSession(appid, appname, new MySessionCallback());
@@ -258,7 +364,7 @@ int main(int argc, char *argv[]) {
                 }
                 break;
 
-            case 9:
+            case OPT_IS_ACTIVE_SESSION:
                 stream.getInput(appid, "Enter app id : ");
                 if(appInfoMap.find(appid) != appInfoMap.end()) {
                     sessionid = appInfoMap.find(appid)->second->m_sessionId;
@@ -269,7 +375,34 @@ int main(int argc, char *argv[]) {
                 }
                 break;
 
-            case 10:
+            case OPT_SET_PREEMPTIVE:
+                stream.getInput(appid, "Enter app id : ");
+                if(appInfoMap.find(appid) != appInfoMap.end()) {
+                    bool preemptive = true;
+                    stream.getInput(preemptive, "Enter preemptive speech [0/1] : ");
+                    sessionid = appInfoMap.find(appid)->second->m_sessionId;
+                    error = client->setPreemptiveSpeak(sessionid, preemptive);
+                    validateReturn(error, 0);
+                } else {
+                    cout << "Session hasn't been created for app(" << appid << ")" << endl;
+                }
+                break;
+
+            case OPT_REQ_EXT_EVENTS:
+                stream.getInput(appid, "Enter app id : ");
+                if(appInfoMap.find(appid) != appInfoMap.end()) {
+                    uint32_t events = 0;
+                    stream.getInput(events,
+                        "Enter required events flag \n[LSB6-Playback Error, LSB5-Network Error, LSB4-Interrupted, LSB3-Cancelled, LSB2-Resumed, LSB1-Paused]\nEnter events flag [0-63] : ");
+                    sessionid = appInfoMap.find(appid)->second->m_sessionId;
+                    error = client->requestExtendedEvents(sessionid, events);
+                    validateReturn(error, 0);
+                } else {
+                    cout << "Session hasn't been created for app(" << appid << ")" << endl;
+                }
+                break;
+
+            case OPT_SPEAK:
                 stream.getInput(appid, "Enter app id : ");
                 if(appInfoMap.find(appid) != appInfoMap.end()) {
                     sessionid = appInfoMap.find(appid)->second->m_sessionId;
@@ -286,7 +419,31 @@ int main(int argc, char *argv[]) {
                 }
                 break;
 
-            case 11:
+            case OPT_PAUSE:
+                stream.getInput(appid, "Enter app id : ");
+                if(appInfoMap.find(appid) != appInfoMap.end()) {
+                    stream.getInput(sid, "Speech Id (int) : ");
+                    sessionid = appInfoMap.find(appid)->second->m_sessionId;
+                    error = client->pause(sessionid, sid);
+                    validateReturn(error, 0);
+                } else {
+                    cout << "Session hasn't been created for app(" << appid << ")" << endl;
+                }
+                break;
+
+            case OPT_RESUME:
+                stream.getInput(appid, "Enter app id : ");
+                if(appInfoMap.find(appid) != appInfoMap.end()) {
+                    stream.getInput(sid, "Speech Id (int) : ");
+                    sessionid = appInfoMap.find(appid)->second->m_sessionId;
+                    error = client->resume(sessionid, sid);
+                    validateReturn(error, 0);
+                } else {
+                    cout << "Session hasn't been created for app(" << appid << ")" << endl;
+                }
+                break;
+
+            case OPT_ABORT:
                 stream.getInput(appid, "Enter app id : ");
                 if(appInfoMap.find(appid) != appInfoMap.end()) {
                     sessionid = appInfoMap.find(appid)->second->m_sessionId;
@@ -297,7 +454,7 @@ int main(int argc, char *argv[]) {
                 }
                 break;
 
-            case 12:
+            case OPT_IS_SPEAKING:
                 stream.getInput(appid, "Enter app id : ");
                 if(appInfoMap.find(appid) != appInfoMap.end()) {
                     sessionid = appInfoMap.find(appid)->second->m_sessionId;
@@ -308,7 +465,37 @@ int main(int argc, char *argv[]) {
                 }
                 break;
 
-            case 13:
+            case OPT_SPEECH_STATE:
+                stream.getInput(appid, "Enter app id : ");
+                if(appInfoMap.find(appid) != appInfoMap.end()) {
+                    stream.getInput(sid, "Speech Id (int) : ");
+                    sessionid = appInfoMap.find(appid)->second->m_sessionId;
+                    error = client->getSpeechState(sessionid, sid, sstate);
+                    validateReturn(error, 0);
+                    string state;
+                    switch(sstate) {
+                        case SPEECH_PENDING: state = "Pending"; break;
+                        case SPEECH_IN_PROGRESS: state = "In Progress/Speaking"; break;
+                        case SPEECH_PAUSED: state = "Paused"; break;
+                        default: state = "Not found";
+                    }
+                    cout << "Speech Status : " << state << endl;
+                } else {
+                    cout << "Session hasn't been created for app(" << appid << ")" << endl;
+                }
+                break;
+
+            case OPT_CLEAR_ALL:
+                stream.getInput(appid, "Enter app id : ");
+                if(appInfoMap.find(appid) != appInfoMap.end()) {
+                    error = client->clearAllPendingSpeeches(appInfoMap.find(appid)->second->m_sessionId);
+                    validateReturn(error, 0);
+                } else {
+                    cout << "Session hasn't been created for app(" << appid << ")" << endl;
+                }
+                break;
+
+            case OPT_DESTROY_SESSION:
                 stream.getInput(appid, "Enter app id : ");
                 if(appInfoMap.find(appid) != appInfoMap.end()) {
                     error = client->destroySession(appInfoMap.find(appid)->second->m_sessionId);
@@ -321,10 +508,16 @@ int main(int argc, char *argv[]) {
                 }
                 break;
 
-            case 14:
+            case OPT_EXIT:
             exit(0);
 
-            case 15:
+            case OPT_BLOCK_TILL_INPUT: {
+                std::string in;
+                stream.getInput(in, "Enter any value to continue : ", true);
+                }
+            break;
+
+            case OPT_SLEEP:
             stream.getInput(appid, "Enter delay (in secs) : ");
             sleep(appid);
             break;

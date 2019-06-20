@@ -53,6 +53,7 @@ struct SessionInfo {
     SessionInfo() :
         m_appId(0),
         m_sessionId(0),
+        m_extendedEvents(0),
         m_gotResource(false),
         m_callback(NULL),
         m_callbackWrapper(new CallbackDataWrapper(this, false)) {}
@@ -68,6 +69,7 @@ struct SessionInfo {
 
     uint32_t m_appId;
     uint32_t m_sessionId;
+    uint32_t m_extendedEvents;
     std::string m_appName;
     bool m_gotResource;
     rtObjectRef m_session;
@@ -83,6 +85,7 @@ public:
     void cleanupConnection(bool serverCrash=false);
     // TTS Global APIs
     TTS_Error enableTTS(bool enable);
+    TTS_Error listVoices(std::string &language, std::vector<std::string> &voices);
     TTS_Error setTTSConfiguration(Configuration &config);
     bool isTTSEnabled(bool forcefetch=false);
     bool isSessionActiveForApp(uint32_t appId);
@@ -96,11 +99,17 @@ public:
     uint32_t /*sessionId*/ createSession(uint32_t sessionId, std::string appName, TTSSessionCallback *callback);
     TTS_Error destroySession(uint32_t sessionId);
     bool isActiveSession(uint32_t sessionId, bool forcefetch=false);
+    TTS_Error setPreemptiveSpeak(uint32_t sessionId, bool preemptive=true);
+    TTS_Error requestExtendedEvents(uint32_t sessionId, uint32_t extendedEvents);
 
     // Speak APIs
     TTS_Error speak(uint32_t sessionId, SpeechData& data);
+    TTS_Error pause(uint32_t sessionId, uint32_t speechId = 0);
+    TTS_Error resume(uint32_t sessionId, uint32_t speechId = 0);
     TTS_Error abort(uint32_t sessionId);
     bool isSpeaking(uint32_t sessionId);
+    TTS_Error getSpeechState(uint32_t sessionId, uint32_t speechId, SpeechState &state);
+    TTS_Error clearAllPendingSpeeches(uint32_t sessionId);
 
 private:
     TTSClientPrivate(TTSClientPrivate&) = delete;

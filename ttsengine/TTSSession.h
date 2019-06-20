@@ -21,6 +21,7 @@
 
 #include "TTSSpeaker.h"
 #include "TTSEventSource.h"
+#include "TTSErrors.h"
 
 #include <mutex>
 
@@ -35,12 +36,24 @@ public:
 
     // Declare object functions
     rtMethodNoArgAndReturn("getConfiguration", getConfiguration, rtObjectRef);
+    rtMethod1ArgAndReturn("setPreemptiveSpeak", setPreemptiveSpeak, bool, rtValue);
     rtMethod3ArgAndReturn("speak", speak, rtValue, rtString, bool, rtValue);
+    rtMethod1ArgAndReturn("pause", pause, rtValue, rtValue);
+    rtMethod1ArgAndReturn("resume", resume, rtValue, rtValue);
     rtMethodNoArgAndReturn("shut", shut, rtValue);
+    rtMethod1ArgAndReturn("getSpeechState", getSpeechState, rtValue, rtValue);
+    rtMethodNoArgAndNoReturn("clearAllPendingSpeeches", clearAllPendingSpeeches);
+    rtMethod1ArgAndNoReturn("requestExtendedEvents", requestExtendedEvents, rtValue);
 
     rtError getConfiguration(rtObjectRef &configuration);
+    rtError setPreemptiveSpeak(bool preemptive, rtValue &result);
+    rtError getSpeechState(rtValue id, rtValue &result);
     rtError speak(rtValue id, rtString text, bool secure, rtValue &result);
+    rtError pause(rtValue id, rtValue &result);
+    rtError resume(rtValue id, rtValue &result);
     rtError shut(rtValue &result);
+    rtError clearAllPendingSpeeches();
+    rtError requestExtendedEvents(rtValue eventflags);
 
     // Declare object properties
     rtReadOnlyProperty(isActive, isActive, rtValue);
@@ -65,6 +78,12 @@ protected:
     virtual TTSConfiguration *configuration();
     virtual void willSpeak(uint32_t speech_id, rtString text);
     virtual void spoke(uint32_t speech_id, rtString text);
+    virtual void paused(uint32_t speech_id);
+    virtual void resumed(uint32_t speech_id);
+    virtual void cancelled(std::vector<uint32_t> &speeches);
+    virtual void interrupted(uint32_t speech_id);
+    virtual void networkerror(uint32_t speech_id);
+    virtual void playbackerror(uint32_t speech_id);
 
     TTSSpeaker *m_speaker;
     std::mutex m_mutex;
@@ -77,6 +96,7 @@ private:
     rtString m_name;
     uint32_t m_appId;
     uint32_t m_sessionId;
+    uint32_t m_extendedEvents;
 };
 
 } // namespace TTS

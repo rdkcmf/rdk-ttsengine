@@ -66,6 +66,7 @@ class TTSEventSource : public rtObject {
 public:
     rtDeclareObject(TTSEventSource, rtObject);
     rtMethod2ArgAndNoReturn("on", setListener, rtString, rtFunctionRef);
+    rtMethod2ArgAndNoReturn("del", delListener, rtString, rtFunctionRef);
 
     rtError setListener(rtString eventName, const rtFunctionRef& f);
     rtError delListener(rtString eventName, const rtFunctionRef& f);

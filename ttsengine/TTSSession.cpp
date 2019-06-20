@@ -21,6 +21,8 @@
 #include "TTSErrors.h"
 #include "logger.h"
 
+#include <sstream>
+
 namespace TTS {
 
 // --- //
@@ -45,13 +47,19 @@ rtDefineProperty(TTSSession, isSpeaking);
 
 //Define TTSSession object methods
 rtDefineMethod(TTSSession, getConfiguration);
+rtDefineMethod(TTSSession, setPreemptiveSpeak);
+rtDefineMethod(TTSSession, getSpeechState);
 rtDefineMethod(TTSSession, speak);
+rtDefineMethod(TTSSession, pause);
+rtDefineMethod(TTSSession, resume);
 rtDefineMethod(TTSSession, shut);
+rtDefineMethod(TTSSession, clearAllPendingSpeeches);
+rtDefineMethod(TTSSession, requestExtendedEvents);
 
 // --- //
 
 TTSSession::TTSSession(uint32_t appId, rtString appName, uint32_t sessionId, TTSConfiguration configuration) :
-    m_speaker(NULL), m_havingConfigToUpdate(false) {
+    m_speaker(NULL), m_havingConfigToUpdate(false), m_extendedEvents(0) {
     m_appId = appId;
     m_name = appName;
     m_sessionId = sessionId;
@@ -59,6 +67,22 @@ TTSSession::TTSSession(uint32_t appId, rtString appName, uint32_t sessionId, TTS
 }
 
 TTSSession::~TTSSession() {
+}
+
+rtError TTSSession::setPreemptiveSpeak(bool preemptive, rtValue &result) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_configuration.setPreemptiveSpeak(preemptive);
+    TTSLOG_INFO("Preemptive Speech has been %s", preemptive ? "enabled" : "disabled");
+    _return(TTS_OK);
+}
+
+rtError TTSSession::getSpeechState(rtValue id, rtValue &result) {
+    TTSLOG_TRACE("Speak");
+
+    // Check if it is active session
+    CHECK_ACTIVENESS();
+
+    _return(m_speaker->getSpeechState(this, id.toUInt32()));
 }
 
 rtError TTSSession::speak(rtValue id, rtString text, bool secure, rtValue &result) {
@@ -77,6 +101,32 @@ rtError TTSSession::speak(rtValue id, rtString text, bool secure, rtValue &resul
     _return(TTS_OK);
 }
 
+rtError TTSSession::pause(rtValue id, rtValue &result) {
+    TTSLOG_TRACE("Pause");
+
+    // Check if it is active session
+    CHECK_ACTIVENESS();
+
+    if(m_speaker->isSpeaking(this)) {
+        m_speaker->pause(id.toUInt32());
+    }
+
+    _return(TTS_OK);
+}
+
+rtError TTSSession::resume(rtValue id, rtValue &result) {
+    TTSLOG_TRACE("Resume");
+
+    // Check if it is active session
+    CHECK_ACTIVENESS();
+
+    if(m_speaker->isSpeaking(this)) {
+        m_speaker->resume(id.toUInt32());
+    }
+
+    _return(TTS_OK);
+}
+
 rtError TTSSession::shut(rtValue &result) {
     TTSLOG_TRACE("Shut");
 
@@ -84,10 +134,25 @@ rtError TTSSession::shut(rtValue &result) {
     CHECK_ACTIVENESS();
 
     if(m_speaker->isSpeaking(this)) {
-        m_speaker->reset();
+        m_speaker->cancelCurrentSpeech();
     }
 
     _return(TTS_OK);
+}
+
+rtError TTSSession::clearAllPendingSpeeches() {
+    TTSLOG_INFO("Clearing all speeches from session");
+    if(m_speaker) {
+        std::vector<uint32_t> speechesCancelled;
+        m_speaker->clearAllSpeechesFrom(this, speechesCancelled);
+        cancelled(speechesCancelled);
+    }
+    return RT_OK;
+}
+
+rtError TTSSession::requestExtendedEvents(rtValue eventflags) {
+    m_extendedEvents = eventflags.toUInt32();
+    return RT_OK;
 }
 
 rtError TTSSession::isActive(rtValue &active) const {
@@ -133,7 +198,7 @@ void TTSSession::setConfiguration(TTSConfiguration &config) {
                 m_tmpConfiguration.rate());
         m_havingConfigToUpdate = true;
     } else {
-        m_configuration = config;
+        m_configuration.updateWith(config);
         TTSLOG_INFO("configuration, endPoint=%s, secureEndPoint=%s, lang=%s, voice=%s, vol=%lf, rate=%u",
                 m_configuration.endPoint().cString(),
                 m_configuration.secureEndPoint().cString(),
@@ -166,9 +231,7 @@ void TTSSession::setInactive(bool notifyClient) {
 
     // If active session, reset speaker
     if(m_speaker) {
-        rtValue v;
-        shut(v);
-
+        clearAllPendingSpeeches();
         m_speaker = NULL;
 
         if(notifyClient) {
@@ -197,13 +260,88 @@ void TTSSession::spoke(uint32_t speech_id, rtString text) {
     TTSLOG_VERBOSE(" [%d, %s]", speech_id, text.cString());
 
     if(m_havingConfigToUpdate) {
-        m_configuration = m_tmpConfiguration;
+        m_configuration.updateWith(m_tmpConfiguration);
         m_havingConfigToUpdate = false;
     }
 
     Event d("spoke");
     d.set("id", speech_id);
     d.set("text", text);
+    sendEvent(d);
+}
+
+void TTSSession::paused(uint32_t speech_id) {
+    if(!(m_extendedEvents & EXT_EVENT_PAUSED))
+        return;
+
+    TTSLOG_WARNING(" [id=%d]", speech_id);
+
+    Event d("paused");
+    d.set("id", speech_id);
+    sendEvent(d);
+}
+
+void TTSSession::resumed(uint32_t speech_id) {
+    if(!(m_extendedEvents & EXT_EVENT_RESUMED))
+        return;
+
+    TTSLOG_WARNING(" [id=%d]", speech_id);
+
+    Event d("resumed");
+    d.set("id", speech_id);
+    sendEvent(d);
+}
+
+void TTSSession::cancelled(std::vector<uint32_t> &speeches) {
+    if(!(m_extendedEvents & EXT_EVENT_CANCELLED))
+        return;
+
+    if(speeches.size() <= 0)
+        return;
+
+    std::stringstream ss;
+    for(auto it = speeches.begin(); it != speeches.end(); ++it) {
+        if(it != speeches.begin())
+            ss << ",";
+        ss << *it;
+    }
+    TTSLOG_WARNING(" [ids=%s]", ss.str().c_str());
+
+    Event d("cancelled");
+    d.set("ids", rtString(ss.str().c_str()));
+    sendEvent(d);
+}
+
+void TTSSession::interrupted(uint32_t speech_id) {
+    if(!(m_extendedEvents & EXT_EVENT_INTERRUPTED))
+        return;
+
+    TTSLOG_WARNING(" [id=%d]", speech_id);
+
+    Event d("interrupted");
+    d.set("id", speech_id);
+    sendEvent(d);
+}
+
+void TTSSession::networkerror(uint32_t speech_id){
+    if(!(m_extendedEvents & EXT_EVENT_NETWORK_ERROR))
+        return;
+
+    TTSLOG_WARNING(" [id=%d]", speech_id);
+
+    Event d("networkerror");
+    d.set("id", speech_id);
+    sendEvent(d);
+}
+
+void TTSSession::playbackerror(uint32_t speech_id){
+    if(!(m_extendedEvents & EXT_EVENT_PLAYBACK_ERROR))
+        return;
+
+    TTSLOG_WARNING(" [id=%d]", speech_id);
+
+    Event d("playbackerror");
+    d.set("id", speech_id);
     sendEvent(d);
 }
 

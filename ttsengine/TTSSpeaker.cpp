@@ -31,14 +31,11 @@ std::map<std::string, std::string> TTSConfiguration::m_others;
 TTSConfiguration::TTSConfiguration() :
     m_ttsEndPoint(""),
     m_ttsEndPointSecured(""),
-    m_language(""),
+    m_language("en-US"),
     m_voice(""),
     m_volume(MAX_VOLUME),
     m_rate(DEFAULT_RATE),
-    m_preemptiveSpeaking(true) {
-        if(getenv("TTS_ENGINE_PREEMPTIVE_SPEAKING"))
-            m_preemptiveSpeaking = atoi(getenv("TTS_ENGINE_PREEMPTIVE_SPEAKING"));
-}
+    m_preemptiveSpeaking(true) { }
 
 TTSConfiguration::~TTSConfiguration() {}
 
@@ -84,6 +81,10 @@ void TTSConfiguration::setRate(const uint8_t rate) {
         TTSLOG_WARNING("Invalid Rate input \"%u\"", rate);
 }
 
+void TTSConfiguration::setPreemptiveSpeak(const bool preemptive) {
+    m_preemptiveSpeaking = preemptive;
+}
+
 const rtString &TTSConfiguration::voice() {
     static rtString str;
 
@@ -121,11 +122,15 @@ bool TTSConfiguration::isValid() {
 
 TTSSpeaker::TTSSpeaker(TTSConfiguration &config) :
     m_defaultConfig(config),
+    m_clientSpeaking(NULL),
+    m_currentSpeechId(0),
     m_isSpeaking(false),
+    m_isPaused(false),
     m_pipeline(NULL),
     m_source(NULL),
     m_audioSink(NULL),
-    m_pipelineError(NULL),
+    m_pipelineError(false),
+    m_networkError(false),
     m_runThread(true),
     m_flushed(false),
     m_isEOS(false),
@@ -158,6 +163,45 @@ int TTSSpeaker::speak(TTSSpeakerClient *client, uint32_t id, rtString text, bool
     return 0;
 }
 
+SpeechState TTSSpeaker::getSpeechState(const TTSSpeakerClient *client, uint32_t id) {
+    // See if the speech is in progress i.e Speaking / Paused
+    {
+        std::lock_guard<std::mutex> lock(m_stateMutex);
+        if(client == m_clientSpeaking && id == m_currentSpeechId) {
+            if(m_isPaused)
+                return SPEECH_PAUSED;
+            else
+                return SPEECH_IN_PROGRESS;
+        }
+    }
+
+    // Or in queue
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        for(auto it = m_queue.begin(); it != m_queue.end(); ++it) {
+            if(it->id == id && it->client == client)
+                return SPEECH_PENDING;
+        }
+    }
+
+    return SPEECH_NOT_FOUND;
+}
+
+void TTSSpeaker::clearAllSpeechesFrom(const TTSSpeakerClient *client, std::vector<uint32_t> &ids) {
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    for(auto it = m_queue.begin(); it != m_queue.end();) {
+        if(it->client == client) {
+            ids.push_back(it->id);
+            it = m_queue.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    if(isSpeaking(client))
+        cancelCurrentSpeech();
+}
+
 bool TTSSpeaker::isSpeaking(const TTSSpeakerClient *client) {
     std::lock_guard<std::mutex> lock(m_stateMutex);
 
@@ -167,15 +211,46 @@ bool TTSSpeaker::isSpeaking(const TTSSpeakerClient *client) {
     return m_isSpeaking;
 }
 
-bool TTSSpeaker::reset() {
-    TTSLOG_VERBOSE("Resetting Speaker");
+void TTSSpeaker::cancelCurrentSpeech() {
+    TTSLOG_VERBOSE("Cancelling current speech");
     if(m_isSpeaking) {
+        m_isPaused = false;
         m_flushed = true;
         m_condition.notify_one();
     }
+}
+
+bool TTSSpeaker::reset() {
+    TTSLOG_VERBOSE("Resetting Speaker");
+    cancelCurrentSpeech();
     flushQueue();
 
     return true;
+}
+
+void TTSSpeaker::pause(uint32_t id) {
+    if(!m_isSpeaking || (id && id != m_currentSpeechId))
+        return;
+
+    if(m_pipeline) {
+        if(!m_isPaused) {
+            m_isPaused = true;
+            gst_element_set_state(m_pipeline, GST_STATE_PAUSED);
+            TTSLOG_INFO("Set state to PAUSED");
+        }
+    }
+}
+
+void TTSSpeaker::resume(uint32_t id) {
+    if(!m_isSpeaking || (id && id != m_currentSpeechId))
+        return;
+
+    if(m_pipeline) {
+        if(m_isPaused) {
+            gst_element_set_state(m_pipeline, GST_STATE_PLAYING);
+            TTSLOG_INFO("Set state to PLAYING");
+        }
+    }
 }
 
 void TTSSpeaker::setSpeakingState(bool state, TTSSpeakerClient *client) {
@@ -431,6 +506,7 @@ void TTSSpeaker::resetPipeline() {
         // Try to recover from errors by destroying the pipeline
         destroyPipeline();
         m_pipelineError = false;
+        m_networkError = false;
     }
 
     if(!m_pipeline) {
@@ -463,7 +539,7 @@ void TTSSpeaker::waitForAudioToFinishTimeout(float timeout_s) {
 
     while(m_pipeline && !m_pipelineError && !m_isEOS && !m_flushed && timeout > std::chrono::system_clock::now()) {
         std::unique_lock<std::mutex> mlock(m_queueMutex);
-        m_condition.wait_until(mlock, timeout, [this] () {
+        m_condition.wait_until(mlock, timeout, [this, &timeout, timeout_s] () {
                 if(!m_pipeline || m_pipelineError)
                     return true;
 
@@ -476,6 +552,10 @@ void TTSSpeaker::waitForAudioToFinishTimeout(float timeout_s) {
                 if(m_flushed) {
                     TTSLOG_VERBOSE("Bailing out because of forced text queue (m_flushed=true)");
                     return true;
+                }
+
+                if(m_isPaused) {
+                    timeout = std::chrono::system_clock::now() + std::chrono::seconds((unsigned long)timeout_s);
                 }
 
                 return false;
@@ -610,6 +690,8 @@ void TTSSpeaker::speakText(TTSConfiguration config, SpeechData &data) {
     m_isEOS = false;
 
     if(m_pipeline && !m_pipelineError && !m_flushed) {
+        m_currentSpeechId = data.id;
+
         g_object_set(G_OBJECT(m_source), "location", constructURL(config, data).c_str(), NULL);
         gst_element_set_state(m_pipeline, GST_STATE_PLAYING);
         TTSLOG_VERBOSE("Speaking.... (%d, \"%s\")", data.id, data.text.cString());
@@ -619,6 +701,7 @@ void TTSSpeaker::speakText(TTSConfiguration config, SpeechData &data) {
     } else {
         TTSLOG_WARNING("m_pipeline=%p, m_pipelineError=%d", m_pipeline, m_pipelineError);
     }
+    m_currentSpeechId = 0;
 }
 
 void TTSSpeaker::GStreamerThreadFunc(void *ctx) {
@@ -659,7 +742,13 @@ void TTSSpeaker::GStreamerThreadFunc(void *ctx) {
         }
 
         // Inform the client after speaking
-        if(!speaker->m_flushed)
+        if(speaker->m_flushed)
+            data.client->interrupted(data.id);
+        else if(speaker->m_networkError)
+            data.client->networkerror(data.id);
+        else if(speaker->m_pipelineError)
+            data.client->playbackerror(data.id);
+        else
             data.client->spoke(data.id, data.text);
         speaker->setSpeakingState(false);
 
@@ -683,54 +772,71 @@ bool TTSSpeaker::handleMessage(GstMessage *message) {
     }
 
     switch (GST_MESSAGE_TYPE(message)){
-        case GST_MESSAGE_ERROR:
-            gst_message_parse_error(message, &error, &debug);
-            TTSLOG_ERROR("error! code: %d, %s, Debug: %s", error->code, error->message, debug);
-            GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS(GST_BIN(m_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "error-pipeline");
-#ifdef BCM_NEXUS
-            m_pipelineError = true;
-            m_condition.notify_one();
-#endif
+        case GST_MESSAGE_ERROR: {
+                gst_message_parse_error(message, &error, &debug);
+                TTSLOG_ERROR("error! code: %d, %s, Debug: %s", error->code, error->message, debug);
+                GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS(GST_BIN(m_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "error-pipeline");
+                std::string source = GST_MESSAGE_SRC_NAME(message);
+                if(source.find("souphttpsrc") == 0)
+                    m_networkError = true;
+                m_pipelineError = true;
+                m_condition.notify_one();
+            }
             break;
 
-        case GST_MESSAGE_WARNING:
-            gst_message_parse_warning(message, &error, &debug);
-            TTSLOG_WARNING("warning! code: %d, %s, Debug: %s", error->code, error->message, debug);
+        case GST_MESSAGE_WARNING: {
+                gst_message_parse_warning(message, &error, &debug);
+                TTSLOG_WARNING("warning! code: %d, %s, Debug: %s", error->code, error->message, debug);
+            }
             break;
 
-        case GST_MESSAGE_EOS:
-            TTSLOG_INFO("Audio EOS message received");
-            m_isEOS = true;
-            m_condition.notify_one();
+        case GST_MESSAGE_EOS: {
+                TTSLOG_INFO("Audio EOS message received");
+                m_isEOS = true;
+                m_condition.notify_one();
+            }
             break;
 
-        case GST_MESSAGE_STATE_CHANGED:
-            gchar* filename;
-            GstState oldstate, newstate, pending;
-            gst_message_parse_state_changed (message, &oldstate, &newstate, &pending);
 
-            // Ignore messages not coming directly from the pipeline.
-            if (GST_ELEMENT(GST_MESSAGE_SRC(message)) != m_pipeline)
-                break;
+        case GST_MESSAGE_STATE_CHANGED: {
+                gchar* filename;
+                GstState oldstate, newstate, pending;
+                gst_message_parse_state_changed (message, &oldstate, &newstate, &pending);
 
-            filename = g_strdup_printf("%s-%s", gst_element_state_get_name(oldstate), gst_element_state_get_name(newstate));
-            GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS(GST_BIN(m_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, filename);
-            g_free(filename);
+                // Ignore messages not coming directly from the pipeline.
+                if (GST_ELEMENT(GST_MESSAGE_SRC(message)) != m_pipeline)
+                    break;
 
-            // get the name and state
-            TTSLOG_VERBOSE("%s old_state %s, new_state %s, pending %s",
-                    GST_MESSAGE_SRC_NAME(message) ? GST_MESSAGE_SRC_NAME(message) : "",
-                    gst_element_state_get_name (oldstate), gst_element_state_get_name (newstate), gst_element_state_get_name (pending));
+                filename = g_strdup_printf("%s-%s", gst_element_state_get_name(oldstate), gst_element_state_get_name(newstate));
+                GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS(GST_BIN(m_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, filename);
+                g_free(filename);
 
-            if (oldstate == GST_STATE_NULL && newstate == GST_STATE_READY) {
-            } else if (oldstate == GST_STATE_READY && newstate == GST_STATE_PAUSED) {
-                GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS(GST_BIN(m_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "paused-pipeline");
-            } else if (oldstate == GST_STATE_PAUSED && newstate == GST_STATE_PAUSED) {
-            } else if (oldstate == GST_STATE_PAUSED && newstate == GST_STATE_PLAYING) {
-                GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS(GST_BIN(m_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "playing-pipeline");
-            } else if (oldstate == GST_STATE_PLAYING && newstate == GST_STATE_PAUSED) {
-            } else if (oldstate == GST_STATE_PAUSED && newstate == GST_STATE_READY) {
-            } else if (oldstate == GST_STATE_READY && newstate == GST_STATE_NULL) {
+                // get the name and state
+                TTSLOG_VERBOSE("%s old_state %s, new_state %s, pending %s",
+                        GST_MESSAGE_SRC_NAME(message) ? GST_MESSAGE_SRC_NAME(message) : "",
+                        gst_element_state_get_name (oldstate), gst_element_state_get_name (newstate), gst_element_state_get_name (pending));
+
+                if (oldstate == GST_STATE_NULL && newstate == GST_STATE_READY) {
+                } else if (oldstate == GST_STATE_READY && newstate == GST_STATE_PAUSED) {
+                    GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS(GST_BIN(m_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "paused-pipeline");
+                } else if (oldstate == GST_STATE_PAUSED && newstate == GST_STATE_PAUSED) {
+                } else if (oldstate == GST_STATE_PAUSED && newstate == GST_STATE_PLAYING) {
+                    GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS(GST_BIN(m_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "playing-pipeline");
+                    std::lock_guard<std::mutex> lock(m_stateMutex);
+                    if(m_isPaused && m_clientSpeaking) {
+                        m_isPaused = false;
+                        m_clientSpeaking->resumed(m_currentSpeechId);
+                        m_condition.notify_one();
+                    }
+                } else if (oldstate == GST_STATE_PLAYING && newstate == GST_STATE_PAUSED) {
+                    std::lock_guard<std::mutex> lock(m_stateMutex);
+                    if(m_isPaused && m_clientSpeaking) {
+                        m_clientSpeaking->paused(m_currentSpeechId);
+                        m_condition.notify_one();
+                    }
+                } else if (oldstate == GST_STATE_PAUSED && newstate == GST_STATE_READY) {
+                } else if (oldstate == GST_STATE_READY && newstate == GST_STATE_NULL) {
+                }
             }
             break;
 
