@@ -120,6 +120,8 @@ public:
     TTSSpeaker(TTSConfiguration &config);
     ~TTSSpeaker();
 
+    void ensurePipeline(bool flag=true);
+
     // Speak Functions
     int speak(TTSSpeakerClient* client, uint32_t id, rtString text, bool secure); // Formalize data to speak API
     bool isSpeaking(const TTSSpeakerClient *client = NULL);
@@ -161,6 +163,7 @@ private:
     bool        m_runThread;
     bool        m_flushed;
     bool        m_isEOS;
+    bool        m_ensurePipeline;
     std::thread *m_gstThread;
 
     static void GStreamerThreadFunc(void *ctx);
@@ -169,6 +172,7 @@ private:
     void destroyPipeline();
 
     // GStreamer Helper functions
+    bool needsPipelineUpdate();
     std::string constructURL(TTSConfiguration &config, SpeechData &d);
     bool isSilentPunctuation(const char c);
     void replaceSuccesivePunctuation(std::string& subject);
