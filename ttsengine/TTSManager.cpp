@@ -337,6 +337,9 @@ rtError TTSManager::enableTTS(bool enable) {
             if(m_policy == RESERVATION) {
                 makeReservedOrClaimedSessionActive();
             } else {
+                if(!m_sessionMap.empty())
+                    m_speaker->ensurePipeline(true);
+
                 TTSLOG_INFO("Making all the sessions active");
                 for(ID_Session_Map::iterator it = m_sessionMap.begin(); it != m_sessionMap.end(); ++it)
                     it->second->setActive(m_speaker, false);
@@ -345,6 +348,7 @@ rtError TTSManager::enableTTS(bool enable) {
             if(m_policy == RESERVATION) {
                 makeSessionInActive(m_activeSession);
             } else {
+                m_speaker->ensurePipeline(false);
                 TTSLOG_INFO("Making all the sessions inactive");
                 for(ID_Session_Map::iterator it = m_sessionMap.begin(); it != m_sessionMap.end(); ++it)
                     it->second->setInactive(false);
@@ -489,8 +493,10 @@ rtError TTSManager::createSession(uint32_t appId, rtString appName, rtObjectRef 
             makeReservedOrClaimedSessionActive();
         } else {
             // Make all the new sessions active to enable them speak any time
-            if(m_ttsEnabled)
+            if(m_ttsEnabled) {
+                m_speaker->ensurePipeline(true);
                 session->setActive(m_speaker, false);
+            }
         }
 
         sessionObject.set("result", TTS_OK);
@@ -535,7 +541,7 @@ rtError TTSManager::destroySession(uint32_t sessionId, rtValue &result) {
     if(ait != m_appMap.end())
         m_appMap.erase(ait);
 
-    TTSLOG_WARNING("Session \"%u\" with AppID \"%u\" is destroyed", sessionId, session->appId());
+    TTSLOG_WARNING("Session \"%u\" with AppID \"%u\" is destroyed, map_size=%d", sessionId, session->appId(), m_sessionMap.size());
 
     // Remove ConnectionMap Entry
     EventSource *es = NULL;
@@ -552,6 +558,11 @@ rtError TTSManager::destroySession(uint32_t sessionId, rtValue &result) {
             break;
         }
         ++citr;
+    }
+
+    if(m_sessionMap.size() == 0) {
+        TTSLOG_WARNING("All sessions were destroyed, destroy pipeline");
+        m_speaker->ensurePipeline(false);
     }
 
     _return(TTS_OK);
@@ -576,6 +587,7 @@ rtError TTSManager::getResourceAllocationPolicy(rtValue &policy) {
 
 void TTSManager::makeSessionActive(TTSSession *session) {
     if(session && m_activeSession != session) {
+        m_speaker->ensurePipeline(true);
         session->setActive(m_speaker);
         m_activeSession = session;
         TTSLOG_INFO("Reserved Resource, RequestingAppName = \"%s\", AppId = \"%u\" is made active",
@@ -586,6 +598,7 @@ void TTSManager::makeSessionActive(TTSSession *session) {
 void TTSManager::makeSessionInActive(TTSSession *session) {
     if(session && m_activeSession == session) {
         session->setInactive();
+        m_speaker->ensurePipeline(false);
         m_activeSession = NULL;
         TTSLOG_INFO("Released Resource, RequestingAppName = \"%s\", AppId = \"%u\" is made in-active",
                 session->appName().cString() ?session->appName().cString() : "Null", session->appId());

@@ -134,6 +134,7 @@ TTSSpeaker::TTSSpeaker(TTSConfiguration &config) :
     m_runThread(true),
     m_flushed(false),
     m_isEOS(false),
+    m_ensurePipeline(false),
     m_gstThread(new std::thread(GStreamerThreadFunc, this)) {
         setenv("GST_DEBUG", "2", 0);
 }
@@ -148,6 +149,13 @@ TTSSpeaker::~TTSSpeaker() {
         m_gstThread->join();
         m_gstThread = NULL;
     }
+}
+
+void TTSSpeaker::ensurePipeline(bool flag) {
+    std::unique_lock<std::mutex> mlock(m_queueMutex);
+    TTSLOG_WARNING("%s", __FUNCTION__);
+    m_ensurePipeline = flag;
+    m_condition.notify_one();
 }
 
 int TTSSpeaker::speak(TTSSpeakerClient *client, uint32_t id, rtString text, bool secure) {
@@ -414,12 +422,14 @@ static void onHaveType(GstElement *typefind, guint /*probability*/, GstCaps *src
 
 // GStreamer Releated members
 void TTSSpeaker::createPipeline() {
-    TTSLOG_TRACE("Creating Pipeline...");
-
-    bool result = TRUE;
-
     m_isEOS = false;
 
+    if(!m_ensurePipeline || m_pipeline) {
+        TTSLOG_WARNING("Skipping Pipeline creation");
+        return;
+    }
+
+    TTSLOG_WARNING("Creating Pipeline...");
     m_pipeline = gst_pipeline_new(NULL);
     if (!m_pipeline) {
         TTSLOG_ERROR("Failed to create gstreamer pipeline");
@@ -469,6 +479,7 @@ void TTSSpeaker::createPipeline() {
     g_object_set(G_OBJECT(m_audioSink), "volume", (double) ((m_defaultConfig.volume() / MAX_VOLUME) * GST_PCM_VOLUME_MAX), NULL);
 
     // Add elements to pipeline and link
+    bool result = TRUE;
 #if defined(BCM_NEXUS)
     gst_bin_add_many(GST_BIN(m_pipeline), m_source, decodebin, m_audioSink, NULL);
     result &= gst_element_link (m_source, decodebin);
@@ -497,7 +508,7 @@ void TTSSpeaker::createPipeline() {
 }
 
 void TTSSpeaker::resetPipeline() {
-    TTSLOG_TRACE("Resetting Pipeline...");
+    TTSLOG_WARNING("Resetting Pipeline...");
 
     // Detect pipe line error and destroy the pipeline if any
     if(m_pipelineError) {
@@ -520,7 +531,7 @@ void TTSSpeaker::resetPipeline() {
 }
 
 void TTSSpeaker::destroyPipeline() {
-    TTSLOG_TRACE("Destroying Pipeline...");
+    TTSLOG_WARNING("Destroying Pipeline...");
 
     if(m_pipeline) {
         gst_element_set_state(m_pipeline, GST_STATE_NULL);
@@ -646,6 +657,10 @@ void TTSSpeaker::sanitizeString(rtString &input, std::string &sanitizedString) {
     TTSLOG_VERBOSE("In:%s, Out:%s", input.cString(), sanitizedString.c_str());
 }
 
+bool TTSSpeaker::needsPipelineUpdate() {
+   return (m_ensurePipeline && !m_pipeline) || (m_pipeline && !m_ensurePipeline);
+}
+
 std::string TTSSpeaker::constructURL(TTSConfiguration &config, SpeechData &d) {
     if(!config.isValid()) {
         TTSLOG_ERROR("Invalid configuration");
@@ -708,14 +723,22 @@ void TTSSpeaker::GStreamerThreadFunc(void *ctx) {
     TTSSpeaker *speaker = (TTSSpeaker*) ctx;
 
     TTSLOG_INFO("Starting GStreamerThread");
-    speaker->createPipeline();
 
     while(speaker && speaker->m_runThread) {
+        if(speaker->needsPipelineUpdate()) {
+            if(speaker->m_ensurePipeline)
+                speaker->createPipeline();
+            else
+                speaker->destroyPipeline();
+        }
+
         // Take an item from the queue
         TTSLOG_INFO("Waiting for text input");
-        while(speaker->m_runThread && speaker->m_queue.empty()) {
+        while(speaker->m_runThread && speaker->m_queue.empty() && !speaker->needsPipelineUpdate()) {
             std::unique_lock<std::mutex> mlock(speaker->m_queueMutex);
-            speaker->m_condition.wait(mlock, [speaker] () { return (!speaker->m_queue.empty() || !speaker->m_runThread); });
+            speaker->m_condition.wait(mlock, [speaker] () {
+                    return (!speaker->m_queue.empty() || !speaker->m_runThread || speaker->needsPipelineUpdate());
+                });
         }
 
         // Stop thread on Speaker's cue
@@ -726,6 +749,10 @@ void TTSSpeaker::GStreamerThreadFunc(void *ctx) {
             }
             TTSLOG_INFO("Stopping GStreamerThread");
             return;
+        }
+
+        if(speaker->needsPipelineUpdate()) {
+            continue;
         }
 
         TTSLOG_INFO("Got text input, list size=%d", speaker->m_queue.size());

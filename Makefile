@@ -34,7 +34,7 @@ SEARCH=\
 
 COMMON_CXXFLAGS += $(CXXFLAGS) -Wno-attributes -Wall -Wextra -Werror -g -fpermissive $(SEARCH) -DRT_PLATFORM_LINUX -std=c++1y -fPIC
 
-COMMON_LDFLAGS = -lglib-2.0 -lpthread -luuid -lgobject-2.0 -lcurl
+COMMON_LDFLAGS = -lglib-2.0 -lpthread -lgobject-2.0 -lcurl
 ifdef ENABLE_RDK_LOGGER
 COMMON_CXXFLAGS += -DUSE_RDK_LOGGER
 COMMON_LDFLAGS += -lrdkloggers -llog4c
@@ -46,7 +46,7 @@ COMMON_CXXFLAGS += -DUSE_BREAKPAD
 COMMON_LDFLAGS += -lbreakpad_client
 endif
 
-TTSENGINE_LDFLAGS = $(COMMON_LDFLAGS) -lgstreamer-1.0 -lgstbase-1.0
+TTSENGINE_LDFLAGS = $(COMMON_LDFLAGS) -lgstreamer-1.0
 TTSCLIENT_LDFLAGS = $(COMMON_LDFLAGS)
 TTSTEST_LDFLAGS = $(COMMON_LDFLAGS)
 
