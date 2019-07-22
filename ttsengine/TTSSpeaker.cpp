@@ -24,6 +24,8 @@
 #include <unistd.h>
 #include <regex>
 
+#define INT_FROM_ENV(env, default_value) ((getenv(env) ? atoi(getenv(env)) : 0) > 0 ? atoi(getenv(env)) : default_value)
+
 namespace TTS {
 
 std::map<std::string, std::string> TTSConfiguration::m_others;
@@ -123,7 +125,7 @@ bool TTSConfiguration::isValid() {
 TTSSpeaker::TTSSpeaker(TTSConfiguration &config) :
     m_defaultConfig(config),
     m_clientSpeaking(NULL),
-    m_currentSpeechId(0),
+    m_currentSpeech(NULL),
     m_isSpeaking(false),
     m_isPaused(false),
     m_pipeline(NULL),
@@ -135,7 +137,10 @@ TTSSpeaker::TTSSpeaker(TTSConfiguration &config) :
     m_flushed(false),
     m_isEOS(false),
     m_ensurePipeline(false),
-    m_gstThread(new std::thread(GStreamerThreadFunc, this)) {
+    m_gstThread(new std::thread(GStreamerThreadFunc, this)),
+    m_busWatch(0),
+    m_pipelineConstructionFailures(0),
+    m_maxPipelineConstructionFailures(INT_FROM_ENV("MAX_PIPELINE_FAILURE_THRESHOLD", 1)) {
         setenv("GST_DEBUG", "2", 0);
 }
 
@@ -175,7 +180,7 @@ SpeechState TTSSpeaker::getSpeechState(const TTSSpeakerClient *client, uint32_t 
     // See if the speech is in progress i.e Speaking / Paused
     {
         std::lock_guard<std::mutex> lock(m_stateMutex);
-        if(client == m_clientSpeaking && id == m_currentSpeechId) {
+        if(client == m_clientSpeaking && m_currentSpeech && id == m_currentSpeech->id) {
             if(m_isPaused)
                 return SPEECH_PAUSED;
             else
@@ -196,6 +201,7 @@ SpeechState TTSSpeaker::getSpeechState(const TTSSpeakerClient *client, uint32_t 
 }
 
 void TTSSpeaker::clearAllSpeechesFrom(const TTSSpeakerClient *client, std::vector<uint32_t> &ids) {
+    TTSLOG_VERBOSE("Cancelling all speeches");
     std::lock_guard<std::mutex> lock(m_queueMutex);
     for(auto it = m_queue.begin(); it != m_queue.end();) {
         if(it->client == client) {
@@ -237,7 +243,7 @@ bool TTSSpeaker::reset() {
 }
 
 void TTSSpeaker::pause(uint32_t id) {
-    if(!m_isSpeaking || (id && id != m_currentSpeechId))
+    if(!m_isSpeaking || !m_currentSpeech || (id && id != m_currentSpeech->id))
         return;
 
     if(m_pipeline) {
@@ -250,7 +256,7 @@ void TTSSpeaker::pause(uint32_t id) {
 }
 
 void TTSSpeaker::resume(uint32_t id) {
-    if(!m_isSpeaking || (id && id != m_currentSpeechId))
+    if(!m_isSpeaking || !m_currentSpeech || (id && id != m_currentSpeech->id))
         return;
 
     if(m_pipeline) {
@@ -432,6 +438,7 @@ void TTSSpeaker::createPipeline() {
     TTSLOG_WARNING("Creating Pipeline...");
     m_pipeline = gst_pipeline_new(NULL);
     if (!m_pipeline) {
+        m_pipelineConstructionFailures++;
         TTSLOG_ERROR("Failed to create gstreamer pipeline");
         return;
     }
@@ -496,12 +503,14 @@ void TTSSpeaker::createPipeline() {
         TTSLOG_ERROR("failed to link elements!");
         gst_object_unref(m_pipeline);
         m_pipeline = NULL;
+        m_pipelineConstructionFailures++;
         return;
     }
 
     GstBus *bus = gst_element_get_bus(m_pipeline);
-    gst_bus_add_watch(bus, GstBusCallback, (gpointer)(this));
+    m_busWatch = gst_bus_add_watch(bus, GstBusCallback, (gpointer)(this));
     gst_object_unref(bus);
+    m_pipelineConstructionFailures = 0;
 
     // wait until pipeline is set to NULL state
     resetPipeline();
@@ -516,9 +525,11 @@ void TTSSpeaker::resetPipeline() {
 
         // Try to recover from errors by destroying the pipeline
         destroyPipeline();
-        m_pipelineError = false;
-        m_networkError = false;
     }
+    m_pipelineError = false;
+    m_networkError = false;
+    m_isPaused = false;
+    m_isEOS = false;
 
     if(!m_pipeline) {
         // If pipe line is NULL, create one
@@ -536,10 +547,13 @@ void TTSSpeaker::destroyPipeline() {
     if(m_pipeline) {
         gst_element_set_state(m_pipeline, GST_STATE_NULL);
         waitForStatus(GST_STATE_NULL, 1*1000);
+        g_source_remove(m_busWatch);
         gst_object_unref(m_pipeline);
     }
 
+    m_busWatch = 0;
     m_pipeline = NULL;
+    m_pipelineConstructionFailures = 0;
     m_condition.notify_one();
 }
 
@@ -658,7 +672,8 @@ void TTSSpeaker::sanitizeString(rtString &input, std::string &sanitizedString) {
 }
 
 bool TTSSpeaker::needsPipelineUpdate() {
-   return (m_ensurePipeline && !m_pipeline) || (m_pipeline && !m_ensurePipeline);
+   return (m_pipelineConstructionFailures < m_maxPipelineConstructionFailures ? true : !m_queue.empty()) &&
+       ((m_ensurePipeline && !m_pipeline) || (m_pipeline && !m_ensurePipeline));
 }
 
 std::string TTSSpeaker::constructURL(TTSConfiguration &config, SpeechData &d) {
@@ -705,7 +720,7 @@ void TTSSpeaker::speakText(TTSConfiguration config, SpeechData &data) {
     m_isEOS = false;
 
     if(m_pipeline && !m_pipelineError && !m_flushed) {
-        m_currentSpeechId = data.id;
+        m_currentSpeech = &data;
 
         g_object_set(G_OBJECT(m_source), "location", constructURL(config, data).c_str(), NULL);
         // PCM Sink seems to be accepting volume change before PLAYING state
@@ -718,7 +733,7 @@ void TTSSpeaker::speakText(TTSConfiguration config, SpeechData &data) {
     } else {
         TTSLOG_WARNING("m_pipeline=%p, m_pipelineError=%d", m_pipeline, m_pipelineError);
     }
-    m_currentSpeechId = 0;
+    m_currentSpeech = NULL;
 }
 
 void TTSSpeaker::GStreamerThreadFunc(void *ctx) {
@@ -728,10 +743,19 @@ void TTSSpeaker::GStreamerThreadFunc(void *ctx) {
 
     while(speaker && speaker->m_runThread) {
         if(speaker->needsPipelineUpdate()) {
-            if(speaker->m_ensurePipeline)
+            if(speaker->m_ensurePipeline) {
                 speaker->createPipeline();
-            else
+
+                // If pipeline creation fails, send playbackerror to the client and remove the req from queue
+                if(!speaker->m_pipeline && !speaker->m_queue.empty()) {
+                    SpeechData data = speaker->dequeueData();
+                    TTSLOG_ERROR("Pipeline creation failed, sending error for speech=%d from client %p\n", data.id, data.client);
+                    data.client->playbackerror(data.id);
+                    speaker->m_pipelineConstructionFailures = 0;
+                }
+            } else {
                 speaker->destroyPipeline();
+            }
         }
 
         // Take an item from the queue
@@ -775,7 +799,7 @@ void TTSSpeaker::GStreamerThreadFunc(void *ctx) {
             data.client->interrupted(data.id);
         else if(speaker->m_networkError)
             data.client->networkerror(data.id);
-        else if(speaker->m_pipelineError)
+        else if(!speaker->m_pipeline || speaker->m_pipelineError)
             data.client->playbackerror(data.id);
         else
             data.client->spoke(data.id, data.text);
@@ -784,6 +808,8 @@ void TTSSpeaker::GStreamerThreadFunc(void *ctx) {
         // stop the pipeline until the next tts string...
         speaker->resetPipeline();
     }
+
+    speaker->destroyPipeline();
 }
 
 int TTSSpeaker::GstBusCallback(GstBus *, GstMessage *message, gpointer data) {
@@ -852,15 +878,19 @@ bool TTSSpeaker::handleMessage(GstMessage *message) {
                 } else if (oldstate == GST_STATE_PAUSED && newstate == GST_STATE_PLAYING) {
                     GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS(GST_BIN(m_pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "playing-pipeline");
                     std::lock_guard<std::mutex> lock(m_stateMutex);
-                    if(m_isPaused && m_clientSpeaking) {
-                        m_isPaused = false;
-                        m_clientSpeaking->resumed(m_currentSpeechId);
-                        m_condition.notify_one();
+                    if(m_clientSpeaking) {
+                        if(m_isPaused) {
+                            m_isPaused = false;
+                            m_clientSpeaking->resumed(m_currentSpeech->id);
+                            m_condition.notify_one();
+                        } else {
+                            m_clientSpeaking->started(m_currentSpeech->id, m_currentSpeech->text);
+                        }
                     }
                 } else if (oldstate == GST_STATE_PLAYING && newstate == GST_STATE_PAUSED) {
                     std::lock_guard<std::mutex> lock(m_stateMutex);
-                    if(m_isPaused && m_clientSpeaking) {
-                        m_clientSpeaking->paused(m_currentSpeechId);
+                    if(m_clientSpeaking && m_isPaused) {
+                        m_clientSpeaking->paused(m_currentSpeech->id);
                         m_condition.notify_one();
                     }
                 } else if (oldstate == GST_STATE_PAUSED && newstate == GST_STATE_READY) {

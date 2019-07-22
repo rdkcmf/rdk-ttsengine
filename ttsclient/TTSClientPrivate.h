@@ -28,7 +28,7 @@
 #include <map>
 
 #include "TTSClient.h"
-#include "TTSErrors.h"
+#include "TTSCommon.h"
 #include "glib_utils.h"
 
 namespace TTS {
@@ -87,6 +87,7 @@ public:
     TTS_Error enableTTS(bool enable);
     TTS_Error listVoices(std::string &language, std::vector<std::string> &voices);
     TTS_Error setTTSConfiguration(Configuration &config);
+    TTS_Error getTTSConfiguration(Configuration &config);
     bool isTTSEnabled(bool forcefetch=false);
     bool isSessionActiveForApp(uint32_t appId);
 
@@ -106,10 +107,9 @@ public:
     TTS_Error speak(uint32_t sessionId, SpeechData& data);
     TTS_Error pause(uint32_t sessionId, uint32_t speechId = 0);
     TTS_Error resume(uint32_t sessionId, uint32_t speechId = 0);
-    TTS_Error abort(uint32_t sessionId);
+    TTS_Error abort(uint32_t sessionId, bool clearPending);
     bool isSpeaking(uint32_t sessionId);
     TTS_Error getSpeechState(uint32_t sessionId, uint32_t speechId, SpeechState &state);
-    TTS_Error clearAllPendingSpeeches(uint32_t sessionId);
 
 private:
     TTSClientPrivate(TTSClientPrivate&) = delete;

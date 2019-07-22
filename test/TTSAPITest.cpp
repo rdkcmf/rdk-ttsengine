@@ -190,22 +190,22 @@ private:
 #define OPT_ENABLE_TTS          1
 #define OPT_VOICE_LIST          2
 #define OPT_SET_CONFIG          3
-#define OPT_TTS_ENABLED         4
-#define OPT_SESSION_ACTIVE      5
-#define OPT_ACQUIRE_RESOURCE    6
-#define OPT_CLAIM_RESOURCE      7
-#define OPT_RELEASE_RESOURCE    8
-#define OPT_CREATE_SESSION      9
-#define OPT_IS_ACTIVE_SESSION   10
-#define OPT_SET_PREEMPTIVE      11
-#define OPT_REQ_EXT_EVENTS      12
-#define OPT_SPEAK               13
-#define OPT_PAUSE               14
-#define OPT_RESUME              15
-#define OPT_ABORT               16
-#define OPT_IS_SPEAKING         17
-#define OPT_SPEECH_STATE        18
-#define OPT_CLEAR_ALL           19
+#define OPT_GET_CONFIG          4
+#define OPT_TTS_ENABLED         5
+#define OPT_SESSION_ACTIVE      6
+#define OPT_ACQUIRE_RESOURCE    7
+#define OPT_CLAIM_RESOURCE      8
+#define OPT_RELEASE_RESOURCE    9
+#define OPT_CREATE_SESSION      10
+#define OPT_IS_ACTIVE_SESSION   11
+#define OPT_SET_PREEMPTIVE      12
+#define OPT_REQ_EXT_EVENTS      13
+#define OPT_SPEAK               14
+#define OPT_PAUSE               15
+#define OPT_RESUME              16
+#define OPT_ABORT               17
+#define OPT_IS_SPEAKING         18
+#define OPT_SPEECH_STATE        19
 #define OPT_DESTROY_SESSION     20
 #define OPT_EXIT                21
 #define OPT_BLOCK_TILL_INPUT    22
@@ -240,6 +240,7 @@ int main(int argc, char *argv[]) {
                     cout << OPT_ENABLE_TTS          << ".enableTTS" << endl;
                     cout << OPT_VOICE_LIST          << ".listVoices" << endl;
                     cout << OPT_SET_CONFIG          << ".setTTSConfiguration" << endl;
+                    cout << OPT_GET_CONFIG          << ".getTTSConfiguration" << endl;
                     cout << OPT_TTS_ENABLED         << ".isTTSEnabled" << endl;
                     cout << OPT_SESSION_ACTIVE      << ".isSessionActiveForApp" << endl;
                     cout << "-" << endl;
@@ -257,7 +258,6 @@ int main(int argc, char *argv[]) {
                     cout << OPT_ABORT               << ".abort" << endl;
                     cout << OPT_IS_SPEAKING         << ".isSpeaking" << endl;
                     cout << OPT_SPEECH_STATE        << ".getSpeechState" << endl;
-                    cout << OPT_CLEAR_ALL           << ".clearAllPendingSpeeches" << endl;
                     cout << OPT_DESTROY_SESSION     << ".destroySession" << endl;
                     cout << OPT_EXIT                << ".exit" << endl;
                     cout << OPT_BLOCK_TILL_INPUT    << ".dummyInput" << endl;
@@ -283,9 +283,10 @@ int main(int argc, char *argv[]) {
         int sid = 0;
         int appid = 0;
         int secure = false;
+        int sessionid = 0;
+        char clearall = 'n';
         string stext;
         string appname;
-        int sessionid = 0;
         std::string language;
         std::vector<string> voices;
         Configuration config;
@@ -321,6 +322,17 @@ int main(int argc, char *argv[]) {
                 config.rate = ival;
                 error = client->setTTSConfiguration(config);
                 validateReturn(error, 0);
+                break;
+
+            case OPT_GET_CONFIG:
+                error = client->getTTSConfiguration(config);
+                validateReturn(error, 0);
+                cout << "ttsEndPoint : " << config.ttsEndPoint << endl;
+                cout << "ttsEndPointSecured : " << config.ttsEndPointSecured << endl;
+                cout << "language : " << config.language << endl;
+                cout << "voice : " << config.voice << endl;
+                cout << "volume : " << config.volume << endl;
+                cout << "rate : " << (long)config.rate << endl;
                 break;
 
             case OPT_TTS_ENABLED:
@@ -445,9 +457,10 @@ int main(int argc, char *argv[]) {
 
             case OPT_ABORT:
                 stream.getInput(appid, "Enter app id : ");
+                stream.getInput(clearall, "Should clear pending speeches [y/n]: ");
                 if(appInfoMap.find(appid) != appInfoMap.end()) {
                     sessionid = appInfoMap.find(appid)->second->m_sessionId;
-                    error = client->abort(sessionid);
+                    error = client->abort(sessionid, (clearall == 'y' || clearall == 'Y'));
                     validateReturn(error, 0);
                 } else {
                     cout << "Session hasn't been created for app(" << appid << ")" << endl;
@@ -480,16 +493,6 @@ int main(int argc, char *argv[]) {
                         default: state = "Not found";
                     }
                     cout << "Speech Status : " << state << endl;
-                } else {
-                    cout << "Session hasn't been created for app(" << appid << ")" << endl;
-                }
-                break;
-
-            case OPT_CLEAR_ALL:
-                stream.getInput(appid, "Enter app id : ");
-                if(appInfoMap.find(appid) != appInfoMap.end()) {
-                    error = client->clearAllPendingSpeeches(appInfoMap.find(appid)->second->m_sessionId);
-                    validateReturn(error, 0);
                 } else {
                     cout << "Session hasn't been created for app(" << appid << ")" << endl;
                 }

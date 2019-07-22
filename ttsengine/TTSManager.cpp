@@ -72,6 +72,7 @@ rtDefineMethod(TTSManager, enableTTS);
 rtDefineMethod(TTSManager, isTTSEnabled);
 rtDefineMethod(TTSManager, listVoices);
 rtDefineMethod(TTSManager, setConfiguration);
+rtDefineMethod(TTSManager, getConfiguration);
 rtDefineMethod(TTSManager, isSessionActiveForApp);
 
 rtDefineMethod(TTSManager, createSession);
@@ -394,12 +395,14 @@ rtError TTSManager::listVoices(rtValue language, rtObjectRef &voices) {
 }
 
 rtError TTSManager::setConfiguration(rtObjectRef configuration) {
-    TTSLOG_INFO("Setting Default Configuration");
+    TTSLOG_VERBOSE("Setting Default Configuration");
 
     double d;
     uint8_t ui;
     rtString s;
     rtString v = m_defaultConfiguration.voice();
+
+    m_mutex.lock();
     CHECK_RT_INPUT_AND_UPDATE(configuration, "ttsEndPoint", s, m_defaultConfiguration.setEndPoint(s));
     CHECK_RT_INPUT_AND_UPDATE(configuration, "ttsEndPointSecured", s, m_defaultConfiguration.setSecureEndPoint(s));
     CHECK_RT_INPUT_AND_UPDATE(configuration, "language", s, m_defaultConfiguration.setLanguage(s));
@@ -407,37 +410,49 @@ rtError TTSManager::setConfiguration(rtObjectRef configuration) {
     CHECK_RT_INPUT_AND_UPDATE(configuration, "volume", d, m_defaultConfiguration.setVolume(d));
     CHECK_RT_INPUT_AND_UPDATE(configuration, "rate", ui, m_defaultConfiguration.setRate(ui));
 
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if(m_defaultConfiguration.endPoint().isEmpty() && !m_defaultConfiguration.secureEndPoint().isEmpty())
-            m_defaultConfiguration.setEndPoint(m_defaultConfiguration.secureEndPoint());
-        else if(m_defaultConfiguration.secureEndPoint().isEmpty() && !m_defaultConfiguration.endPoint().isEmpty())
-            m_defaultConfiguration.setSecureEndPoint(m_defaultConfiguration.endPoint());
-        else if(m_defaultConfiguration.endPoint().isEmpty() && m_defaultConfiguration.secureEndPoint().isEmpty())
-            TTSLOG_WARNING("TTSEndPoint & SecureTTSEndPoints are empty!!!");
+    if(m_defaultConfiguration.endPoint().isEmpty() && !m_defaultConfiguration.secureEndPoint().isEmpty())
+        m_defaultConfiguration.setEndPoint(m_defaultConfiguration.secureEndPoint());
+    else if(m_defaultConfiguration.secureEndPoint().isEmpty() && !m_defaultConfiguration.endPoint().isEmpty())
+        m_defaultConfiguration.setSecureEndPoint(m_defaultConfiguration.endPoint());
+    else if(m_defaultConfiguration.endPoint().isEmpty() && m_defaultConfiguration.secureEndPoint().isEmpty())
+        TTSLOG_WARNING("TTSEndPoint & SecureTTSEndPoints are empty!!!");
 
-        TTSLOG_INFO("Default config updated, endPoint=%s, secureEndPoint=%s, lang=%s, voice=%s, vol=%lf, rate=%u",
-                m_defaultConfiguration.endPoint().cString(),
-                m_defaultConfiguration.secureEndPoint().cString(),
-                m_defaultConfiguration.language().cString(),
-                m_defaultConfiguration.voice().cString(),
-                m_defaultConfiguration.volume(),
-                m_defaultConfiguration.rate());
-
-        // Pass newly set configuration to all the sessions
-        // WARN : This might over write the session specific configurations (TBD)
-        ID_Session_Map::iterator it = m_sessionMap.begin();
-        while(it != m_sessionMap.end()) {
-            it->second->setConfiguration(m_defaultConfiguration);;
-            ++it;
-        }
+    // Pass newly set configuration to all the sessions
+    // WARN : This might over write the session specific configurations (TBD)
+    ID_Session_Map::iterator it = m_sessionMap.begin();
+    while(it != m_sessionMap.end()) {
+        it->second->setConfiguration(m_defaultConfiguration);;
+        ++it;
     }
+    m_mutex.unlock();
+
+    TTSLOG_INFO("Default config updated, endPoint=%s, secureEndPoint=%s, lang=%s, voice=%s, vol=%lf, rate=%u",
+            m_defaultConfiguration.endPoint().cString(),
+            m_defaultConfiguration.secureEndPoint().cString(),
+            m_defaultConfiguration.language().cString(),
+            m_defaultConfiguration.voice().cString(),
+            m_defaultConfiguration.volume(),
+            m_defaultConfiguration.rate());
 
     if(v != m_defaultConfiguration.voice()) {
         Event d("voice_changed");
         d.set("voice", m_defaultConfiguration.voice());
         sendEvent(d);
     }
+
+    return RT_OK;
+}
+
+rtError TTSManager::getConfiguration(rtObjectRef &configuration) {
+    TTSLOG_VERBOSE("Getting Default Configuration");
+
+    configuration = new rtMapObject;
+    configuration.set("ttsEndPoint", m_defaultConfiguration.endPoint());
+    configuration.set("ttsEndPointSecured", m_defaultConfiguration.secureEndPoint());
+    configuration.set("language", m_defaultConfiguration.language());
+    configuration.set("voice", m_defaultConfiguration.voice());
+    configuration.set("volume", m_defaultConfiguration.volume());
+    configuration.set("rate", (uint8_t)m_defaultConfiguration.rate());
 
     return RT_OK;
 }

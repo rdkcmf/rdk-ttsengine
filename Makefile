@@ -166,7 +166,7 @@ install:
 	
 	@mkdir -p ${INSTALL_PATH}/usr/include/
 	@cp -f ttsclient/TTSClient.h ${INSTALL_PATH}/usr/include/
-	@cp -f common/TTSErrors.h ${INSTALL_PATH}/usr/include/
+	@cp -f common/TTSCommon.h ${INSTALL_PATH}/usr/include/
 
 clean:
 	@rm -rf $(Common_OBJDIR)/*.o $(TTSEngine_OBJDIR)/*.o $(TTSClient_OBJDIR)/*.o

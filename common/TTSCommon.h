@@ -36,12 +36,13 @@ enum SpeechState {
 };
 
 enum ExtendedEvents {
-    EXT_EVENT_PAUSED            = 1 << 0,
-    EXT_EVENT_RESUMED           = 1 << 1,
-    EXT_EVENT_CANCELLED         = 1 << 2,
-    EXT_EVENT_INTERRUPTED       = 1 << 3,
-    EXT_EVENT_NETWORK_ERROR     = 1 << 4,
-    EXT_EVENT_PLAYBACK_ERROR    = 1 << 5,
+    EXT_EVENT_WILL_SPEAK        = 1 << 0,
+    EXT_EVENT_PAUSED            = 1 << 1,
+    EXT_EVENT_RESUMED           = 1 << 2,
+    EXT_EVENT_CANCELLED         = 1 << 3,
+    EXT_EVENT_INTERRUPTED       = 1 << 4,
+    EXT_EVENT_NETWORK_ERROR     = 1 << 5,
+    EXT_EVENT_PLAYBACK_ERROR    = 1 << 6,
     EXT_EVENT_ALL               = 0xFFFF
 };
 

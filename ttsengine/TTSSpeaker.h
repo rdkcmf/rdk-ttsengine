@@ -29,7 +29,7 @@
 #include <thread>
 #include <condition_variable>
 
-#include "TTSErrors.h"
+#include "TTSCommon.h"
 
 // --- //
 
@@ -81,6 +81,7 @@ class TTSSpeakerClient {
 public:
     virtual TTSConfiguration* configuration() = 0;
     virtual void willSpeak(uint32_t speech_id, rtString text) = 0;
+    virtual void started(uint32_t speech_id, rtString text) = 0;
     virtual void spoke(uint32_t speech_id, rtString text) = 0;
     virtual void paused(uint32_t speech_id) = 0;
     virtual void resumed(uint32_t speech_id) = 0;
@@ -131,7 +132,7 @@ private:
     // Private Data
     TTSConfiguration &m_defaultConfig;
     TTSSpeakerClient *m_clientSpeaking;
-    uint32_t m_currentSpeechId;
+    SpeechData *m_currentSpeech;
     bool m_isSpeaking;
     bool m_isPaused;
 
@@ -158,6 +159,9 @@ private:
     bool        m_isEOS;
     bool        m_ensurePipeline;
     std::thread *m_gstThread;
+    guint       m_busWatch;
+    uint8_t     m_pipelineConstructionFailures;
+    const uint8_t     m_maxPipelineConstructionFailures;
 
     static void GStreamerThreadFunc(void *ctx);
     void createPipeline();

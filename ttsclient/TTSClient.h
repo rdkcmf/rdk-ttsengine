@@ -19,7 +19,7 @@
 #ifndef _TTS_CLIENT_H_
 #define _TTS_CLIENT_H_
 
-#include "TTSErrors.h"
+#include "TTSCommon.h"
 
 #include <iostream>
 #include <vector>
@@ -68,6 +68,7 @@ public:
     virtual void onTTSSessionCreated(uint32_t appId, uint32_t sessionId) = 0;
     virtual void onResourceAcquired(uint32_t appId, uint32_t sessionId) = 0;
     virtual void onResourceReleased(uint32_t appId, uint32_t sessionId) = 0;
+    virtual void onWillSpeak(uint32_t appId, uint32_t sessionId, SpeechData &data) { (void)appId; (void)sessionId; (void)data; }
     virtual void onSpeechStart(uint32_t appId, uint32_t sessionId, SpeechData &data) { (void)appId; (void)sessionId; (void)data; }
     virtual void onSpeechPause(uint32_t appId, uint32_t sessionId, uint32_t speechId) { (void)appId; (void)sessionId; (void)speechId; }
     virtual void onSpeechResume(uint32_t appId, uint32_t sessionId, uint32_t speechId) { (void)appId; (void)sessionId; (void)speechId; }
@@ -94,6 +95,7 @@ public:
     TTS_Error enableTTS(bool enable=true);
     TTS_Error listVoices(std::string language, std::vector<std::string> &voices);
     TTS_Error setTTSConfiguration(Configuration &config);
+    TTS_Error getTTSConfiguration(Configuration &config);
     bool isTTSEnabled(bool forcefetch=false);
     bool isSessionActiveForApp(uint32_t appid);
 
@@ -113,10 +115,9 @@ public:
     TTS_Error speak(uint32_t sessionid, SpeechData& data);
     TTS_Error pause(uint32_t sessionid, uint32_t speechid);
     TTS_Error resume(uint32_t sessionid, uint32_t speechid);
-    TTS_Error abort(uint32_t sessionid);
+    TTS_Error abort(uint32_t sessionid, bool clearPending = false);
     bool isSpeaking(uint32_t sessionid);
     TTS_Error getSpeechState(uint32_t sessionid, uint32_t speechid, SpeechState &state);
-    TTS_Error clearAllPendingSpeeches(uint32_t sessionid);
 
 private:
     TTSClient(TTSConnectionCallback *client, bool discardRtDispatching=false);

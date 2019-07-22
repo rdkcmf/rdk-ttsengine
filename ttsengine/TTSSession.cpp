@@ -18,7 +18,7 @@
 */
 
 #include "TTSSession.h"
-#include "TTSErrors.h"
+#include "TTSCommon.h"
 #include "logger.h"
 
 #include <sstream>
@@ -53,7 +53,7 @@ rtDefineMethod(TTSSession, speak);
 rtDefineMethod(TTSSession, pause);
 rtDefineMethod(TTSSession, resume);
 rtDefineMethod(TTSSession, shut);
-rtDefineMethod(TTSSession, clearAllPendingSpeeches);
+rtDefineMethod(TTSSession, abortAndClearPending);
 rtDefineMethod(TTSSession, requestExtendedEvents);
 
 // --- //
@@ -140,7 +140,7 @@ rtError TTSSession::shut(rtValue &result) {
     _return(TTS_OK);
 }
 
-rtError TTSSession::clearAllPendingSpeeches() {
+rtError TTSSession::abortAndClearPending() {
     TTSLOG_INFO("Clearing all speeches from session");
     if(m_speaker) {
         std::vector<uint32_t> speechesCancelled;
@@ -231,7 +231,7 @@ void TTSSession::setInactive(bool notifyClient) {
 
     // If active session, reset speaker
     if(m_speaker) {
-        clearAllPendingSpeeches();
+        abortAndClearPending();
         m_speaker = NULL;
 
         if(notifyClient) {
@@ -248,9 +248,21 @@ TTSConfiguration *TTSSession::configuration() {
 }
 
 void TTSSession::willSpeak(uint32_t speech_id, rtString text) {
+    if(!(m_extendedEvents & EXT_EVENT_WILL_SPEAK))
+        return;
+
     TTSLOG_VERBOSE(" [%d, %s]", speech_id, text.cString());
 
     Event d("willSpeak");
+    d.set("id", speech_id);
+    d.set("text", text);
+    sendEvent(d);
+}
+
+void TTSSession::started(uint32_t speech_id, rtString text) {
+    TTSLOG_WARNING(" [%d, %s]", speech_id, text.cString());
+
+    Event d("started");
     d.set("id", speech_id);
     d.set("text", text);
     sendEvent(d);
