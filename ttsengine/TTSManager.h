@@ -19,7 +19,7 @@
 #ifndef _TTS_ENGINE_H_
 #define _TTS_ENGINE_H_
 
-#include "TTSErrors.h"
+#include "TTSCommon.h"
 #include "TTSSession.h"
 #include "glib_utils.h"
 
@@ -44,12 +44,14 @@ public:
     rtMethodNoArgAndReturn("isTTSEnabled", isTTSEnabled, bool);
     rtMethod1ArgAndReturn("listVoices", listVoices, rtValue, rtObjectRef);
     rtMethod1ArgAndNoReturn("setConfiguration", setConfiguration, rtObjectRef);
+    rtMethodNoArgAndReturn("getConfiguration", getConfiguration, rtObjectRef);
     rtMethod1ArgAndReturn("isSessionActiveForApp", isSessionActiveForApp, uint32_t, bool);
 
     rtError enableTTS(bool enable);
     rtError isTTSEnabled(bool &enabled);
     rtError listVoices(rtValue language, rtObjectRef &voices);
     rtError setConfiguration(rtObjectRef configuration);
+    rtError getConfiguration(rtObjectRef &configuration);
     rtError isSessionActiveForApp(uint32_t appid, bool &active);
 
     // Resource management APIs

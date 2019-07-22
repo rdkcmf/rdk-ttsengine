@@ -67,6 +67,7 @@ int main() {
     PRINT_CONFIG("TTS_DEFAULT_LOG_LEVEL");
     PRINT_CONFIG("TTS_ENGINE_RT_LOG_LEVEL");
     PRINT_CONFIG("TTS_ENGINE_TEST_CLEANUP");
+    PRINT_CONFIG("MAX_PIPELINE_FAILURE_THRESHOLD");
 
     // Initialization
     logger_init();
@@ -107,6 +108,7 @@ int main() {
 
     g_main_loop_run(gLoop);
     rtRemoteShutdown();
+    gst_deinit();
 
     if(source)
         g_source_unref(source);

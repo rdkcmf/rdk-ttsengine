@@ -18,7 +18,7 @@
 */
 
 #include "TTSEventSource.h"
-#include "TTSErrors.h"
+#include "TTSCommon.h"
 #include "logger.h"
 
 namespace TTS {

@@ -50,7 +50,6 @@ TTSClient *TTSClient::create(TTSConnectionCallback *callback, bool discardRtDisp
 }
 
 TTSClient::TTSClient(TTSConnectionCallback *callback, bool discardRtDispatching) {
-    TTSLOG_WARNING("Constructing TTSClient");
     m_priv = new TTSClientPrivate(callback, discardRtDispatching);
 }
 
@@ -74,6 +73,11 @@ TTS_Error TTSClient::listVoices(std::string language, std::vector<std::string> &
 TTS_Error TTSClient::setTTSConfiguration(Configuration &config) {
     CHECK_PRIV();
     return m_priv->setTTSConfiguration(config);
+}
+
+TTS_Error TTSClient::getTTSConfiguration(Configuration &config) {
+    CHECK_PRIV();
+    return m_priv->getTTSConfiguration(config);
 }
 
 bool TTSClient::isTTSEnabled(bool forcefetch) {
@@ -141,9 +145,9 @@ TTS_Error TTSClient::resume(uint32_t sessionid, uint32_t speechid) {
     return m_priv->resume(sessionid, speechid);
 }
 
-TTS_Error TTSClient::abort(uint32_t sessionid) {
+TTS_Error TTSClient::abort(uint32_t sessionid, bool clearPending) {
     CHECK_PRIV();
-    return m_priv->abort(sessionid);
+    return m_priv->abort(sessionid, clearPending);
 }
 
 bool TTSClient::isSpeaking(uint32_t sessionid) {
@@ -154,11 +158,6 @@ bool TTSClient::isSpeaking(uint32_t sessionid) {
 TTS_Error TTSClient::getSpeechState(uint32_t sessionid, uint32_t speechid, SpeechState &state) {
     CHECK_PRIV();
     return m_priv->getSpeechState(sessionid, speechid, state);
-}
-
-TTS_Error TTSClient::clearAllPendingSpeeches(uint32_t sessionid) {
-    CHECK_PRIV();
-    return m_priv->clearAllPendingSpeeches(sessionid);
 }
 
 } // namespace TTS

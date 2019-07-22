@@ -55,7 +55,6 @@ namespace TTS {
     } while(0)
 
 #define INSTALL_HANDLER_CHECK_RESULT(obj, event, callback) do {\
-    TTSLOG_WARNING("Going to install handler for event %s", event); \
     if(obj.send("on", event, callback) != RT_OK) { \
         TTSLOG_ERROR("Installing \"%s\" event handler failed", event); \
     } else { \
@@ -63,7 +62,6 @@ namespace TTS {
     } } while(0)
 
 #define UNINSTALL_HANDLER_CHECK_RESULT(obj, event, callback) do {\
-    TTSLOG_WARNING("Going to uninstall handler for event %s", event); \
     if(obj.send("del", event, callback) != RT_OK) { \
         TTSLOG_ERROR("Uninstalling \"%s\" event handler failed", event); \
     } else { \
@@ -291,7 +289,7 @@ void TTSClientPrivate::connectToTTSManager() {
 void TTSClientPrivate::StartDispatcherThread() {
     // Install rt message dispatcher
     m_dispatchThread = new std::thread([]() {
-        TTSLOG_WARNING("Starting Dispatch thread %ld", syscall(__NR_gettid));
+        TTSLOG_INFO("Starting Dispatch thread %ld", syscall(__NR_gettid));
 
         int pipefd[2];
         GMainContext *context = g_main_context_new();
@@ -311,13 +309,13 @@ void TTSClientPrivate::StartDispatcherThread() {
         g_main_loop_run(loop);
 
         // Cleanup
-        TTSLOG_WARNING("Cleaning up dispatcher thread");
+        TTSLOG_INFO("Cleaning up dispatcher thread");
         g_source_unref(source);
         g_main_loop_unref(loop);
         g_main_context_unref(context);
         close(pipefd[0]);
         close(pipefd[1]);
-        TTSLOG_WARNING("Dispatcher thread exit");
+        TTSLOG_INFO("Dispatcher thread exit");
     });
 }
 
@@ -333,7 +331,7 @@ TTSClientPrivate::TTSClientPrivate(TTSConnectionCallback *callback, bool discard
     m_callback(callback),
     m_callbackWrapper(new CallbackDataWrapper(this, true)),
     m_policy(INVALID_POLICY) {
-    TTSLOG_WARNING("Constructing TTSClientPrivate");
+    TTSLOG_INFO("Constructing TTSClientPrivate");
     ++m_count;
 
     // Initialize rtRemote
@@ -351,7 +349,7 @@ TTSClientPrivate::TTSClientPrivate(TTSConnectionCallback *callback, bool discard
 }
 
 TTSClientPrivate::~TTSClientPrivate() {
-    TTSLOG_WARNING("Destoying TTS Client");
+    TTSLOG_INFO("Destroying TTS Client");
     cleanupConnection();
 
     // Stop rtObject detection thread
@@ -422,7 +420,7 @@ TTS_Error TTSClientPrivate::enableTTS(bool enable) {
         return TTS_FAIL;
     }
 
-    TTSLOG_INFO("TTS is set to %s", enable ? "enabled" : "disabled");
+    TTSLOG_VERBOSE("TTS is set to %s", enable ? "enabled" : "disabled");
     return TTS_OK;
 }
 
@@ -483,6 +481,29 @@ TTS_Error TTSClientPrivate::setTTSConfiguration(Configuration &config) {
     return TTS_OK;
 }
 
+TTS_Error TTSClientPrivate::getTTSConfiguration(Configuration &config) {
+    if(!m_connected) {
+        TTSLOG_WARNING("Connection to TTS manager is not establised");
+        return TTS_FAIL;
+    }
+
+    rtObjectRef map;
+    rtError rc = m_manager.sendReturns("getConfiguration", map);
+    if(rc != RT_OK) {
+        TTSLOG_ERROR("Couldn't get configuration");
+        return TTS_FAIL;
+    }
+
+    config.ttsEndPoint = map.get<rtString>("ttsEndPoint").cString();
+    config.ttsEndPointSecured = map.get<rtString>("ttsEndPointSecured").cString();
+    config.language = map.get<rtString>("language").cString();
+    config.voice = map.get<rtString>("voice").cString();
+    config.volume = map.get<double>("volume");
+    config.rate = map.get<uint8_t>("rate");
+
+    return TTS_OK;
+}
+
 bool TTSClientPrivate::isTTSEnabled(bool force) {
     CHECK_CONNECTION_RETURN_ON_FAIL(false);
 
@@ -496,7 +517,7 @@ bool TTSClientPrivate::isTTSEnabled(bool force) {
         }
 
         m_ttsEnabled = enabled;
-        TTSLOG_INFO("TTS is %s", enabled ? "enabled" : "disabled");
+        TTSLOG_VERBOSE("TTS is %s", enabled ? "enabled" : "disabled");
         return enabled;
     }
 }
@@ -518,7 +539,7 @@ bool TTSClientPrivate::isSessionActiveForApp(uint32_t appId) {
 TTS_Error TTSClientPrivate::acquireResource(uint32_t appId) {
     CHECK_CONNECTION_RETURN_ON_FAIL(TTS_FAIL);
 
-    TTSLOG_INFO("acquireResource");
+    TTSLOG_VERBOSE("acquireResource");
     if(m_policy != RESERVATION) {
         TTSLOG_ERROR("Non-Reservation policy (i.e %s) is in effect, declining request", policyStr(m_policy));
         return TTS_POLICY_VIOLATION;
@@ -537,7 +558,7 @@ TTS_Error TTSClientPrivate::acquireResource(uint32_t appId) {
 TTS_Error TTSClientPrivate::claimResource(uint32_t appId) {
     CHECK_CONNECTION_RETURN_ON_FAIL(TTS_FAIL);
 
-    TTSLOG_INFO("claimResource");
+    TTSLOG_VERBOSE("claimResource");
     if(m_policy != RESERVATION) {
         TTSLOG_ERROR("Non-Reservation policy (i.e %s) is in effect, declining request", policyStr(m_policy));
         return TTS_POLICY_VIOLATION;
@@ -556,7 +577,7 @@ TTS_Error TTSClientPrivate::claimResource(uint32_t appId) {
 TTS_Error TTSClientPrivate::releaseResource(uint32_t appId) {
     CHECK_CONNECTION_RETURN_ON_FAIL(TTS_FAIL);
 
-    TTSLOG_INFO("releaseResource");
+    TTSLOG_VERBOSE("releaseResource");
     if(m_policy != RESERVATION) {
         TTSLOG_ERROR("Non-Reservation policy (i.e %s) is in effect, declining request", policyStr(m_policy));
         return TTS_POLICY_VIOLATION;
@@ -608,10 +629,10 @@ uint32_t TTSClientPrivate::createSession(uint32_t appId, std::string appName, TT
 
     rtObjectRef obj;
     rtError rc = m_manager.sendReturns("createSession", appId, rtString(appName.c_str()), eventCallbacks, obj);
-    if(rc != RT_OK) {
+    if(rc != RT_OK || obj.get<rtValue>("result").toUInt32() != TTS_OK) {
         TTSLOG_ERROR("Session couldn't be created for App (\"%u\", \"%s\")", appId, appName.c_str());
     } else {
-        TTSLOG_INFO("Created Session");
+        TTSLOG_VERBOSE("Created Session");
 
         sessionInfo->m_session = obj.get<rtObjectRef>("session");
         if(obj.get("id", sessionInfo->m_sessionId) == RT_OK) {
@@ -623,21 +644,19 @@ uint32_t TTSClientPrivate::createSession(uint32_t appId, std::string appName, TT
                 m_callback->onTTSStateChanged(m_ttsEnabled);
             }
 
-            INSTALL_HANDLER_CHECK_RESULT(sessionInfo->m_session, "willSpeak", sessionInfo->m_rtEventCallback.ptr());
+            INSTALL_HANDLER_CHECK_RESULT(sessionInfo->m_session, "started", sessionInfo->m_rtEventCallback.ptr());
             INSTALL_HANDLER_CHECK_RESULT(sessionInfo->m_session, "spoke", sessionInfo->m_rtEventCallback.ptr());
         } else {
             sessionInfo->m_sessionId = 0;
             TTSLOG_ERROR("Session ID couldn't be retrieved");
         }
 
-        TTSLOG_INFO("Installed event handlers");
-
         if(sessionInfo->m_callback)
             sessionInfo->m_callback->onTTSSessionCreated(sessionInfo->m_appId, sessionInfo->m_sessionId);
     }
 
     if(sessionInfo->m_sessionId) {
-        TTSLOG_WARNING("Session Info for SessionId-%u is %p", sessionInfo->m_sessionId, sessionInfo);
+        TTSLOG_VERBOSE("Session Info for SessionId-%u is %p", sessionInfo->m_sessionId, sessionInfo);
         return sessionInfo->m_sessionId;
     } else {
         delete sessionInfo;
@@ -711,6 +730,7 @@ TTS_Error TTSClientPrivate::requestExtendedEvents(uint32_t sessionId, uint32_t e
     CHECK_SESSION_RETURN_ON_FAIL(sessionId, sessionItr, sessionInfo, TTS_NO_SESSION_FOUND);
     UNUSED(sessionId);
 
+    SET_UNSET_EXTENDED_EVENT(sessionInfo, extendedEvents, EXT_EVENT_WILL_SPEAK, "willSpeak");
     SET_UNSET_EXTENDED_EVENT(sessionInfo, extendedEvents, EXT_EVENT_PAUSED, "paused");
     SET_UNSET_EXTENDED_EVENT(sessionInfo, extendedEvents, EXT_EVENT_RESUMED, "resumed");
     SET_UNSET_EXTENDED_EVENT(sessionInfo, extendedEvents, EXT_EVENT_CANCELLED, "cancelled");
@@ -755,7 +775,7 @@ TTS_Error TTSClientPrivate::speak(uint32_t sessionId, SpeechData& data) {
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::abort(uint32_t sessionId) {
+TTS_Error TTSClientPrivate::abort(uint32_t sessionId, bool clearPending) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -769,8 +789,12 @@ TTS_Error TTSClientPrivate::abort(uint32_t sessionId) {
     }
 
     rtValue result;
-    rtError rc = sessionInfo->m_session.sendReturns("shut", result);
-    if(rc != RT_OK || result.toUInt8() != TTS_OK) {
+    rtError rc = RT_OK;
+    if(clearPending)
+        rc = sessionInfo->m_session.send("abortAndClearPending");
+    else
+        rc = sessionInfo->m_session.sendReturns("shut", result);
+    if(rc != RT_OK || (!clearPending && result.toUInt8() != TTS_OK)) {
         TTSLOG_ERROR("Coudn't abort, TTS Code = %u", result.toUInt8());
         return (TTS_Error)result.toUInt8();
     }
@@ -864,23 +888,6 @@ TTS_Error TTSClientPrivate::getSpeechState(uint32_t sessionId, uint32_t speechId
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::clearAllPendingSpeeches(uint32_t sessionId){
-    SessionInfo *sessionInfo;
-    std::map<uint32_t, SessionInfo*>::iterator sessionItr;
-
-    CHECK_CONNECTION_RETURN_ON_FAIL(TTS_FAIL);
-    CHECK_SESSION_RETURN_ON_FAIL(sessionId, sessionItr, sessionInfo, TTS_NO_SESSION_FOUND);
-    UNUSED(sessionId);
-
-    rtError rc = sessionInfo->m_session.send("clearAllPendingSpeeches");
-    if(rc != RT_OK) {
-        TTSLOG_ERROR("Couldn't clear pending speeches");
-        return TTS_FAIL;
-    }
-
-    return TTS_OK;
-}
-
 rtError TTSClientPrivate::onEventCB(int numArgs, const rtValue* args, rtValue* result, void* context) {
     rtError rc = RT_OK;
 
@@ -914,7 +921,7 @@ rtError TTSClientPrivate::onConnectionEvent(const rtObjectRef &event, TTSClientP
     rtValue val;
     if(event.get("name", val) == RT_OK) {
         if (val.toString() == "tts_state_changed") {
-            TTSLOG_WARNING("Got tts_state_changed event from TTS Manager for %p", client);
+            TTSLOG_INFO("Got tts_state_changed event from TTS Manager for %p", client);
             client->m_ttsEnabled = event.get<bool>("enabled");
             if(client->m_callback)
                 client->m_callback->onTTSStateChanged(client->m_ttsEnabled);
@@ -922,7 +929,7 @@ rtError TTSClientPrivate::onConnectionEvent(const rtObjectRef &event, TTSClientP
             std::string voice = event.get<rtString>("voice").cString();
             if(client->m_callback)
                 client->m_callback->onVoiceChanged(voice);
-            TTSLOG_WARNING("Got voice_changed event from TTS Manager %p, new voice = %s", client, voice.c_str());
+            TTSLOG_INFO("Got voice_changed event from TTS Manager %p, new voice = %s", client, voice.c_str());
         }
     }
 
@@ -936,47 +943,63 @@ rtError TTSClientPrivate::onSessionEvent(const rtObjectRef &event, SessionInfo *
         eventName = val.toString();
         SpeechData d;
         if (eventName == "resource_acquired") {
-            TTSLOG_WARNING("Got resource_acquired event from session %u", sessionInfo->m_sessionId);
+            uint32_t session = event.get<rtValue>("session").toUInt32();
+            TTSLOG_INFO("Got resource_acquired event from session %u", session);
             sessionInfo->m_gotResource = true;
             if(sessionInfo->m_callback)
-                sessionInfo->m_callback->onResourceAcquired(sessionInfo->m_appId, sessionInfo->m_sessionId);
+                sessionInfo->m_callback->onResourceAcquired(sessionInfo->m_appId, session);
         } else if (eventName == "resource_released") {
-            TTSLOG_WARNING("Got resource_released event from session %u", sessionInfo->m_sessionId);
+            uint32_t session = event.get<rtValue>("session").toUInt32();
+            TTSLOG_INFO("Got resource_released event from session %u", session);
             sessionInfo->m_gotResource = false;
             if(sessionInfo->m_callback)
-                sessionInfo->m_callback->onResourceReleased(sessionInfo->m_appId, sessionInfo->m_sessionId);
+                sessionInfo->m_callback->onResourceReleased(sessionInfo->m_appId, session);
         } else if(eventName == "willSpeak") {
-            TTSLOG_WARNING("Got willSpeak event from session %u", sessionInfo->m_sessionId);
+            TTSLOG_INFO("Got willSpeak event from session %u", sessionInfo->m_sessionId);
+            d.id = event.get<rtValue>("id").toUInt32();
+            d.text = event.get<rtString>("text").cString();
+            if(sessionInfo->m_callback)
+                sessionInfo->m_callback->onWillSpeak(sessionInfo->m_appId, sessionInfo->m_sessionId, d);
+        } else if(eventName == "started") {
+            TTSLOG_INFO("Got started event from session %u", sessionInfo->m_sessionId);
             d.id = event.get<rtValue>("id").toUInt32();
             d.text = event.get<rtString>("text").cString();
             if(sessionInfo->m_callback)
                 sessionInfo->m_callback->onSpeechStart(sessionInfo->m_appId, sessionInfo->m_sessionId, d);
         } else if(eventName == "paused") {
-            TTSLOG_WARNING("Got paused event from session %u", sessionInfo->m_sessionId);
+            TTSLOG_INFO("Got paused event from session %u", sessionInfo->m_sessionId);
             if(sessionInfo->m_callback)
                 sessionInfo->m_callback->onSpeechPause(sessionInfo->m_appId, sessionInfo->m_sessionId, event.get<rtValue>("id").toUInt32());
         } else if(eventName == "resumed") {
-            TTSLOG_WARNING("Got resumed event from session %u", sessionInfo->m_sessionId);
+            TTSLOG_INFO("Got resumed event from session %u", sessionInfo->m_sessionId);
             if(sessionInfo->m_callback)
                 sessionInfo->m_callback->onSpeechResume(sessionInfo->m_appId, sessionInfo->m_sessionId, event.get<rtValue>("id").toUInt32());
         } else if(eventName == "cancelled") {
-            TTSLOG_WARNING("Got cancelled event from session %u", sessionInfo->m_sessionId);
-            if(sessionInfo->m_callback)
-                sessionInfo->m_callback->onSpeechCancelled(sessionInfo->m_appId, sessionInfo->m_sessionId, event.get<rtValue>("id").toUInt32());
+            if(sessionInfo->m_callback) {
+                std::string ids = event.get<rtString>("ids").cString();
+                char *token = strtok((char*)ids.c_str(), ",");
+                uint32_t speechid = 0;
+                while(token) {
+                    speechid = atol(token);
+                    TTSLOG_INFO("Got cancelled event from session %u, speech id %u", sessionInfo->m_sessionId, speechid);
+                    sessionInfo->m_callback->onSpeechCancelled(sessionInfo->m_appId, sessionInfo->m_sessionId, speechid);
+                    token = strtok(NULL, ",");
+                }
+            }
         } else if(eventName == "interrupted") {
-            TTSLOG_WARNING("Got interrupted event from session %u", sessionInfo->m_sessionId);
+            TTSLOG_INFO("Got interrupted event from session %u", sessionInfo->m_sessionId);
             if(sessionInfo->m_callback)
                 sessionInfo->m_callback->onSpeechInterrupted(sessionInfo->m_appId, sessionInfo->m_sessionId, event.get<rtValue>("id").toUInt32());
         } else if(eventName == "networkerror") {
-            TTSLOG_WARNING("Got networkerror event from session %u", sessionInfo->m_sessionId);
+            TTSLOG_INFO("Got networkerror event from session %u", sessionInfo->m_sessionId);
             if(sessionInfo->m_callback)
                 sessionInfo->m_callback->onNetworkError(sessionInfo->m_appId, sessionInfo->m_sessionId, event.get<rtValue>("id").toUInt32());
         } else if(eventName == "playbackerror") {
-            TTSLOG_WARNING("Got playbackerror event from session %u", sessionInfo->m_sessionId);
+            TTSLOG_INFO("Got playbackerror event from session %u", sessionInfo->m_sessionId);
             if(sessionInfo->m_callback)
                 sessionInfo->m_callback->onPlaybackError(sessionInfo->m_appId, sessionInfo->m_sessionId, event.get<rtValue>("id").toUInt32());
         } else if (eventName == "spoke") {
-            TTSLOG_WARNING("Got spoke event from session %u", sessionInfo->m_sessionId);
+            TTSLOG_INFO("Got spoke event from session %u", sessionInfo->m_sessionId);
             d.id = event.get<rtValue>("id").toUInt32();
             d.text = event.get<rtString>("text").cString();
             if(sessionInfo->m_callback)

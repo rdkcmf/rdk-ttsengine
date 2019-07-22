@@ -21,7 +21,7 @@
 
 #include "TTSSpeaker.h"
 #include "TTSEventSource.h"
-#include "TTSErrors.h"
+#include "TTSCommon.h"
 
 #include <mutex>
 
@@ -42,7 +42,7 @@ public:
     rtMethod1ArgAndReturn("resume", resume, rtValue, rtValue);
     rtMethodNoArgAndReturn("shut", shut, rtValue);
     rtMethod1ArgAndReturn("getSpeechState", getSpeechState, rtValue, rtValue);
-    rtMethodNoArgAndNoReturn("clearAllPendingSpeeches", clearAllPendingSpeeches);
+    rtMethodNoArgAndNoReturn("abortAndClearPending", abortAndClearPending);
     rtMethod1ArgAndNoReturn("requestExtendedEvents", requestExtendedEvents, rtValue);
 
     rtError getConfiguration(rtObjectRef &configuration);
@@ -52,7 +52,7 @@ public:
     rtError pause(rtValue id, rtValue &result);
     rtError resume(rtValue id, rtValue &result);
     rtError shut(rtValue &result);
-    rtError clearAllPendingSpeeches();
+    rtError abortAndClearPending();
     rtError requestExtendedEvents(rtValue eventflags);
 
     // Declare object properties
@@ -77,6 +77,7 @@ protected:
     // Speaker Client Callbacks
     virtual TTSConfiguration *configuration();
     virtual void willSpeak(uint32_t speech_id, rtString text);
+    virtual void started(uint32_t speech_id, rtString text);
     virtual void spoke(uint32_t speech_id, rtString text);
     virtual void paused(uint32_t speech_id);
     virtual void resumed(uint32_t speech_id);
