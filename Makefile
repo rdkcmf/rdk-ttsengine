@@ -41,9 +41,8 @@ COMMON_LDFLAGS += -lrdkloggers -llog4c
 endif
 
 ifdef ENABLE_BREAKPAD
-SEARCH += -I$(SYSROOT_INCLUDES_DIR)/breakpad
 COMMON_CXXFLAGS += -DUSE_BREAKPAD
-COMMON_LDFLAGS += -lbreakpad_client
+COMMON_LDFLAGS += -lbreakpadwrapper
 endif
 
 TTSENGINE_LDFLAGS = $(COMMON_LDFLAGS) -lgstreamer-1.0
