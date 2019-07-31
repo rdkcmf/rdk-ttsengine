@@ -32,8 +32,11 @@
 #include <gst/app/gstappsink.h>
 #include <gst/audio/audio.h>
 
-#include <rtRemote.h>
+#ifdef USE_BREAKPAD
+#include "breakpad_wrapper.h"
+#endif
 
+#include <rtRemote.h>
 #include <iostream>
 #include <map>
 
@@ -51,6 +54,9 @@ GMainLoop* gLoop;
 using namespace TTS;
 
 int main() {
+#ifdef USE_BREAKPAD
+    breakpad_ExceptionHandler();
+#endif
 
     int pipefd[2];
     GSource *source = NULL;
@@ -61,8 +67,6 @@ int main() {
     PRINT_CONFIG("TTS_DEFAULT_LOG_LEVEL");
     PRINT_CONFIG("TTS_ENGINE_RT_LOG_LEVEL");
     PRINT_CONFIG("TTS_ENGINE_TEST_CLEANUP");
-    PRINT_CONFIG("TTS_ENGINE_EXTRA_PUNCTUATIONS");
-    PRINT_CONFIG("TTS_ENGINE_PREEMPTIVE_SPEAKING");
 
     // Initialization
     logger_init();
