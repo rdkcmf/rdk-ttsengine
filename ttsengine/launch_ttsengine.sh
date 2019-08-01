@@ -36,6 +36,12 @@ if [ -z "$GST_REGISTRY_FORK" ]; then
     export GST_REGISTRY_FORK="no"
 fi
 
+RESTART_DELAY_SECS=5
+MAX_TIME_TO_TRY_SECS=25
+MAX_ATTEMPTS=$((MAX_TIME_TO_TRY_SECS / RESTART_DELAY_SECS))
+RUN_TIME_THRESHOLD_SECS=$((15*60))
+
+ATTEMPT_NO=1
 LAUNCH_COUNT=1
 while :; do
     if [ ! -e '/usr/bin/TTSEngine' ]; then
@@ -55,8 +61,25 @@ while :; do
     echo "**********************************************************************"             >> $LOG_FILE
 
     echo "Starting TTSEngine..."
+    _START_TIME=`date +"%s"`
     TTSEngine >> $LOG_FILE 2>&1
+    _END_TIME=`date +"%s"`
     echo "TTSEngine is terminated / stopped..."
+
+    _RUN_TIME=$((_END_TIME - _START_TIME))
+    if [ $_RUN_TIME -gt $RUN_TIME_THRESHOLD_SECS ];then
+       ATTEMPT_NO=1
+       continue;
+    fi
+
+    if [ $ATTEMPT_NO -ge $MAX_ATTEMPTS ];then
+       echo "Giving up launching TTSEngine after $MAX_ATTEMPTS attempts" | tee -a $LOG_FILE
+       break;
+    fi
+    echo "Remaining attempts for TTSEngine - $((MAX_ATTEMPTS - ATTEMPT_NO))" | tee -a $LOG_FILE
+
+    sleep $RESTART_DELAY_SECS
+    ATTEMPT_NO=$((ATTEMPT_NO+1))
     LAUNCH_COUNT=$((LAUNCH_COUNT+1))
 done
 
