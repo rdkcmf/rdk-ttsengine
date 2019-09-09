@@ -39,13 +39,6 @@ namespace TTS {
 #define DEFAULT_WPM 200
 #define MAX_VOLUME 100
 
-#ifdef BCM_NEXUS
-// Broadcom PCM sink volume range is 0-100
-#define GST_PCM_VOLUME_MAX 100.0
-#else
-#define GST_PCM_VOLUME_MAX 1.0
-#endif
-
 // --- //
 
 class TTSConfiguration {
@@ -136,7 +129,7 @@ public:
 private:
 
     // Private Data
-    TTSConfiguration m_defaultConfig;
+    TTSConfiguration &m_defaultConfig;
     TTSSpeakerClient *m_clientSpeaking;
     uint32_t m_currentSpeechId;
     bool m_isSpeaking;

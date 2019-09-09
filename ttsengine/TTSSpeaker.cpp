@@ -476,7 +476,7 @@ void TTSSpeaker::createPipeline() {
     }
 
     // set the TTS volume to max.
-    g_object_set(G_OBJECT(m_audioSink), "volume", (double) ((m_defaultConfig.volume() / MAX_VOLUME) * GST_PCM_VOLUME_MAX), NULL);
+    g_object_set(G_OBJECT(m_audioSink), "volume", (double) (m_defaultConfig.volume() / MAX_VOLUME), NULL);
 
     // Add elements to pipeline and link
     bool result = TRUE;
@@ -708,6 +708,8 @@ void TTSSpeaker::speakText(TTSConfiguration config, SpeechData &data) {
         m_currentSpeechId = data.id;
 
         g_object_set(G_OBJECT(m_source), "location", constructURL(config, data).c_str(), NULL);
+        // PCM Sink seems to be accepting volume change before PLAYING state
+        g_object_set(G_OBJECT(m_audioSink), "volume", (double) (data.client->configuration()->volume() / MAX_VOLUME), NULL);
         gst_element_set_state(m_pipeline, GST_STATE_PLAYING);
         TTSLOG_VERBOSE("Speaking.... (%d, \"%s\")", data.id, data.text.cString());
 
