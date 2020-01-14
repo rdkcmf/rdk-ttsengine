@@ -342,37 +342,41 @@ bool TTSSpeaker::waitForStatus(GstState expected_state, uint32_t timeout_ms) {
 #ifdef INTELCE
 static GstElement* findElement(GstElement *element, const char* targetName)
 {
-    GstElement *re = NULL;
-    if (GST_IS_BIN(element)) {
-        GstIterator* it = gst_bin_iterate_elements(GST_BIN(element));
-        GValue item = G_VALUE_INIT;
+    GstElement *resultElement = NULL;
+    if(GST_IS_BIN(element)) {
         bool done = false;
+        GValue nextItem = G_VALUE_INIT;
+        GstIterator* iterator = gst_bin_iterate_elements(GST_BIN(element));
+
         while(!done) {
-            switch (gst_iterator_next(it, &item)) {
+            switch(gst_iterator_next(iterator, &nextItem)) {
                 case GST_ITERATOR_OK:
                     {
-                        GstElement *next = GST_ELEMENT(g_value_get_object(&item));
-                        done = (re = findElement(next, targetName)) != NULL;
-                        g_value_reset (&item);
-                        break;
+                        GstElement *nextElement = GST_ELEMENT(g_value_get_object(&nextItem));
+                        done = (resultElement = findElement(nextElement, targetName)) != NULL;
+                        g_value_reset(&nextItem);
                     }
-                case GST_ITERATOR_RESYNC:
-                    gst_iterator_resync (it);
                     break;
+
+                case GST_ITERATOR_RESYNC:
+                    gst_iterator_resync(iterator);
+                    break;
+
                 case GST_ITERATOR_ERROR:
                 case GST_ITERATOR_DONE:
                     done = true;
                     break;
             }
         }
-        g_value_unset (&item);
-        gst_iterator_free(it);
+
+        gst_iterator_free(iterator);
+        g_value_unset(&nextItem);
     } else {
-        if (strstr(gst_element_get_name(element), targetName)) {
-            re = element;
-        }
+        if(strstr(gst_element_get_name(element), targetName))
+            resultElement = element;
     }
-    return re;
+
+    return resultElement;
 }
 
 static void onHaveType(GstElement *typefind, guint /*probability*/, GstCaps *srcPadCaps, gpointer user_data)
@@ -389,7 +393,7 @@ static void onHaveType(GstElement *typefind, guint /*probability*/, GstCaps *src
 
     if (strncmp (gst_structure_get_name(s), "audio/", 6) == 0) {
         // link typefind directly to mpegaudioparse to complete pipeline
-        GstElement *sink = findElement(pipeline,"mpegaudioparse");
+        GstElement *sink = findElement(pipeline, "mpegaudioparse");
         GstPad *sinkpad = gst_element_get_static_pad (sink, "sink");
         GstPad *srcpad  = gst_element_get_static_pad (typefind, "src");
 
@@ -403,8 +407,8 @@ static void onHaveType(GstElement *typefind, guint /*probability*/, GstCaps *src
         gst_object_unref (srcpad);
     } else if (strncmp (gst_structure_get_name(s), "application/x-id3", 17) == 0) {
         // link typefind to id3demux then id3demux to mpegaudioparse to complete pipeline
-        GstElement *sink = findElement(pipeline,"mpegaudioparse");
-        GstElement *id3demux = findElement(pipeline,"id3demux");
+        GstElement *sink = findElement(pipeline, "mpegaudioparse");
+        GstElement *id3demux = findElement(pipeline, "id3demux");
         GstPad *sinkpad = gst_element_get_static_pad (sink, "sink");
         GstPad *srcpad  = gst_element_get_static_pad (typefind, "src");
         GstPad *id3Sinkpad = gst_element_get_static_pad (id3demux, "sink");
