@@ -103,6 +103,8 @@ struct SpeechData {
         }
         ~SpeechData() {}
 
+	SpeechData& operator=(const SpeechData& data) = default;
+
         TTSSpeakerClient *client;
         bool secure;
         uint32_t id;
