@@ -148,7 +148,7 @@ struct MyStream {
     template<class T>
     bool getInput(T &var, const char *prompt = NULL, bool console = false) {
         stringstream ss;
-        char cstr[512];
+        static char cstr[5 * 1024];
         string str;
 
         istream *tin = in;
