@@ -139,6 +139,7 @@ TTSSpeaker::TTSSpeaker(TTSConfiguration &config) :
     m_ensurePipeline(false),
     m_gstThread(new std::thread(GStreamerThreadFunc, this)),
     m_busWatch(0),
+    m_duration(0),
     m_pipelineConstructionFailures(0),
     m_maxPipelineConstructionFailures(INT_FROM_ENV("MAX_PIPELINE_FAILURE_THRESHOLD", 1)) {
         setenv("GST_DEBUG", "2", 0);
@@ -565,30 +566,44 @@ void TTSSpeaker::waitForAudioToFinishTimeout(float timeout_s) {
     TTSLOG_TRACE("timeout_s=%f", timeout_s);
 
     auto timeout = std::chrono::system_clock::now() + std::chrono::seconds((unsigned long)timeout_s);
+    auto startTime = std::chrono::system_clock::now();
+    gint64 lastPosition = 0;
 
-    while(m_pipeline && !m_pipelineError && !m_isEOS && !m_flushed && timeout > std::chrono::system_clock::now()) {
+    auto playbackInterrupted = [this] () -> bool { return !m_pipeline || m_pipelineError || m_flushed; };
+    auto playbackCompleted = [this] () -> bool { return m_isEOS; };
+
+    while(timeout > std::chrono::system_clock::now()) {
         std::unique_lock<std::mutex> mlock(m_queueMutex);
-        m_condition.wait_until(mlock, timeout, [this, &timeout, timeout_s] () {
-                if(!m_pipeline || m_pipelineError)
-                    return true;
-
-                // EOS enquiry
-                if(m_isEOS)
-                    return true;
-
-                // Speaker has flushed the data, no need wait for the completion
-                // must break and reset the pipeline
-                if(m_flushed) {
-                    TTSLOG_VERBOSE("Bailing out because of forced text queue (m_flushed=true)");
-                    return true;
-                }
-
-                if(m_isPaused) {
-                    timeout = std::chrono::system_clock::now() + std::chrono::seconds((unsigned long)timeout_s);
-                }
-
-                return false;
+        m_condition.wait_until(mlock, timeout, [this, playbackInterrupted, playbackCompleted] () {
+            return playbackInterrupted() || playbackCompleted();
         });
+
+        if(playbackInterrupted() || playbackCompleted()) {
+            if(m_flushed)
+                TTSLOG_VERBOSE("Bailing out because of forced text queue (m_flushed=true)");
+            break;
+        } else {
+            if(m_isPaused) {
+                timeout = std::chrono::system_clock::now() + std::chrono::seconds((unsigned long)timeout_s);
+            } else {
+                if(m_duration > 0 && m_duration != (gint64)GST_CLOCK_TIME_NONE &&
+                    std::chrono::system_clock::now() < startTime + std::chrono::nanoseconds(m_duration)) {
+                    timeout = std::chrono::system_clock::now() + std::chrono::seconds((unsigned long)timeout_s);
+                    TTSLOG_VERBOSE("Not reached duration");
+                } else {
+                    // This is a workaround for broken BRCM PCM Sink duration query - To be deleted once that is fixed
+                    m_duration = 0;
+                    gint64 position = 0;
+                    gst_element_query_position(m_pipeline, GST_FORMAT_TIME, &position);
+                    if(position > 0 && position != (gint64)GST_CLOCK_TIME_NONE && position > lastPosition) {
+                        TTSLOG_VERBOSE("Reached/Invalid duration, last position=%" GST_TIME_FORMAT ", current position=%" GST_TIME_FORMAT,
+                                GST_TIME_ARGS(lastPosition), GST_TIME_ARGS(position));
+                        timeout = std::chrono::system_clock::now() + std::chrono::seconds((unsigned long)timeout_s);
+                        lastPosition = position;
+                    }
+                }
+            }
+        }
     }
     TTSLOG_INFO("m_isEOS=%d, m_pipeline=%p, m_pipelineError=%d, m_flushed=%d",
             m_isEOS, m_pipeline, m_pipelineError, m_flushed);
@@ -722,6 +737,7 @@ std::string TTSSpeaker::constructURL(TTSConfiguration &config, SpeechData &d) {
 
 void TTSSpeaker::speakText(TTSConfiguration config, SpeechData &data) {
     m_isEOS = false;
+    m_duration = 0;
 
     if(m_pipeline && !m_pipelineError && !m_flushed) {
         m_currentSpeech = &data;
@@ -733,7 +749,7 @@ void TTSSpeaker::speakText(TTSConfiguration config, SpeechData &data) {
         TTSLOG_VERBOSE("Speaking.... (%d, \"%s\")", data.id, data.text.cString());
 
         //Wait for EOS with a timeout incase EOS never comes
-        waitForAudioToFinishTimeout(60);
+        waitForAudioToFinishTimeout(10);
     } else {
         TTSLOG_WARNING("m_pipeline=%p, m_pipelineError=%d", m_pipeline, m_pipelineError);
     }
@@ -856,6 +872,12 @@ bool TTSSpeaker::handleMessage(GstMessage *message) {
             }
             break;
 
+
+        case GST_MESSAGE_DURATION_CHANGED: {
+                gst_element_query_duration(m_pipeline, GST_FORMAT_TIME, &m_duration);
+                TTSLOG_INFO("Duration %" GST_TIME_FORMAT, GST_TIME_ARGS(m_duration));
+            }
+            break;
 
         case GST_MESSAGE_STATE_CHANGED: {
                 gchar* filename;

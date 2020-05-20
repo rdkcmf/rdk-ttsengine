@@ -160,6 +160,7 @@ private:
     bool        m_ensurePipeline;
     std::thread *m_gstThread;
     guint       m_busWatch;
+    gint64      m_duration;
     uint8_t     m_pipelineConstructionFailures;
     const uint8_t     m_maxPipelineConstructionFailures;
 
