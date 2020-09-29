@@ -294,8 +294,7 @@ void TTSSpeaker::flushQueue() {
 
 SpeechData TTSSpeaker::dequeueData() {
     std::lock_guard<std::mutex> lock(m_queueMutex);
-    SpeechData d;
-    d = m_queue.front();
+    SpeechData d(m_queue.front());
     m_queue.pop_front();
     m_flushed = false;
     return d;
