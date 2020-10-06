@@ -16,11 +16,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
 */
-#ifndef _TTS_CLIENT_PRIVATE_H_
-#define _TTS_CLIENT_PRIVATE_H_
+#ifndef _TTS_CLIENT_PRIVATE_RT_REMOTE_H_
+#define _TTS_CLIENT_PRIVATE_RT_REMOTE_H_
 
 #include <rtRemote.h>
-
 #include <iostream>
 #include <thread>
 #include <mutex>
@@ -28,7 +27,7 @@
 #include <map>
 
 #include "TTSClient.h"
-#include "TTSCommon.h"
+#include "TTSClientPrivateInterface.h"
 #include "glib_utils.h"
 
 namespace TTS {
@@ -78,41 +77,41 @@ struct SessionInfo {
     rtRefT<rtFunctionCallback> m_rtEventCallback;
 };
 
-class TTSClientPrivate {
+class TTSClientPrivateRtRemote : public TTSClientPrivateInterface {
 public:
-    TTSClientPrivate(TTSConnectionCallback *client, bool discardRtDispatching=false);
-    ~TTSClientPrivate();
-    void cleanupConnection(bool serverCrash=false);
+    TTSClientPrivateRtRemote(TTSConnectionCallback *client, bool discardRtDispatching=false);
+    ~TTSClientPrivateRtRemote();
+
     // TTS Global APIs
-    TTS_Error enableTTS(bool enable);
-    TTS_Error listVoices(std::string &language, std::vector<std::string> &voices);
-    TTS_Error setTTSConfiguration(Configuration &config);
-    TTS_Error getTTSConfiguration(Configuration &config);
-    bool isTTSEnabled(bool forcefetch=false);
-    bool isSessionActiveForApp(uint32_t appId);
+    TTS_Error enableTTS(bool enable) override;
+    TTS_Error listVoices(std::string &language, std::vector<std::string> &voices) override;
+    TTS_Error setTTSConfiguration(Configuration &config) override;
+    TTS_Error getTTSConfiguration(Configuration &config) override;
+    bool isTTSEnabled(bool forcefetch=false) override;
+    bool isSessionActiveForApp(uint32_t appId) override;
 
     // Resource management APIs
-    TTS_Error acquireResource(uint32_t appId);
-    TTS_Error claimResource(uint32_t appId);
-    TTS_Error releaseResource(uint32_t appId);
+    TTS_Error acquireResource(uint32_t appId) override;
+    TTS_Error claimResource(uint32_t appId) override;
+    TTS_Error releaseResource(uint32_t appId) override;
 
     // Session management APIs
-    uint32_t /*sessionId*/ createSession(uint32_t sessionId, std::string appName, TTSSessionCallback *callback);
-    TTS_Error destroySession(uint32_t sessionId);
-    bool isActiveSession(uint32_t sessionId, bool forcefetch=false);
-    TTS_Error setPreemptiveSpeak(uint32_t sessionId, bool preemptive=true);
-    TTS_Error requestExtendedEvents(uint32_t sessionId, uint32_t extendedEvents);
+    uint32_t /*sessionId*/ createSession(uint32_t sessionId, std::string appName, TTSSessionCallback *callback) override;
+    TTS_Error destroySession(uint32_t sessionId) override;
+    bool isActiveSession(uint32_t sessionId, bool forcefetch=false) override;
+    TTS_Error setPreemptiveSpeak(uint32_t sessionId, bool preemptive=true) override;
+    TTS_Error requestExtendedEvents(uint32_t sessionId, uint32_t extendedEvents) override;
 
     // Speak APIs
-    TTS_Error speak(uint32_t sessionId, SpeechData& data);
-    TTS_Error pause(uint32_t sessionId, uint32_t speechId = 0);
-    TTS_Error resume(uint32_t sessionId, uint32_t speechId = 0);
-    TTS_Error abort(uint32_t sessionId, bool clearPending);
-    bool isSpeaking(uint32_t sessionId);
-    TTS_Error getSpeechState(uint32_t sessionId, uint32_t speechId, SpeechState &state);
+    TTS_Error speak(uint32_t sessionId, SpeechData& data) override;
+    TTS_Error pause(uint32_t sessionId, uint32_t speechId = 0) override;
+    TTS_Error resume(uint32_t sessionId, uint32_t speechId = 0) override;
+    TTS_Error abort(uint32_t sessionId, bool clearPending) override;
+    bool isSpeaking(uint32_t sessionId) override;
+    TTS_Error getSpeechState(uint32_t sessionId, uint32_t speechId, SpeechState &state) override;
 
 private:
-    TTSClientPrivate(TTSClientPrivate&) = delete;
+    TTSClientPrivateRtRemote(TTSClientPrivateRtRemote&) = delete;
 
     rtObjectRef m_manager;
     bool m_connected;
@@ -135,12 +134,13 @@ private:
     void echoSessionID(char *sessionId);
     bool findRemoteObject(std::string obj_name, uint32_t timeout_ms);
     void connectToTTSManager();
+    void cleanupConnection(bool serverCrash=false);
 
     static void InitializeRtRemote();
     static void rtServerCrashCB(void *data);
     static void StartDispatcherThread();
     static rtError onEventCB(int numArgs, const rtValue* args, rtValue* result, void* context);
-    static rtError onConnectionEvent(const rtObjectRef &event, TTSClientPrivate *client);
+    static rtError onConnectionEvent(const rtObjectRef &event, TTSClientPrivateRtRemote *client);
     static rtError onSessionEvent(const rtObjectRef &event, SessionInfo *sessionInfo);
 
     static std::once_flag m_rtRemoteInit;
@@ -152,4 +152,4 @@ private:
 
 } // namespace TTS
 
-#endif //_TTS_CLIENT_PRIVATE_H_
+#endif //_TTS_CLIENT_PRIVATE_RT_REMOTE_H_

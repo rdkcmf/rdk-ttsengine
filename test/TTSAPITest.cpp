@@ -146,6 +146,10 @@ struct MyStream {
     }
 
     template<class T>
+    void getValue(stringstream &ss, T &var) { ss >> var; }
+    void getValue(stringstream &ss, string &var) { var = ss.str(); }
+
+    template<class T>
     bool getInput(T &var, const char *prompt = NULL, bool console = false) {
         stringstream ss;
         static char cstr[5 * 1024];
@@ -173,7 +177,7 @@ struct MyStream {
 
             if((str.find('#') == string::npos || !str.erase(str.find('#')).empty()) && !str.empty()) {
                 ss.str(str);
-                ss >> var;
+                getValue(ss, var);
                 break;
             }
         } while(1);
