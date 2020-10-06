@@ -42,6 +42,7 @@ struct Configuration {
 
 struct SpeechData {
     SpeechData() : secure(true), id(0) {}
+    SpeechData(uint32_t i) : secure(true), id(i) {}
     ~SpeechData() {}
 
     bool secure;
@@ -54,9 +55,9 @@ public:
     TTSConnectionCallback() {}
     virtual ~TTSConnectionCallback() {}
 
-    virtual void onTTSServerConnected() = 0;
-    virtual void onTTSServerClosed() = 0;
-    virtual void onTTSStateChanged(bool enabled) = 0;
+    virtual void onTTSServerConnected() {}
+    virtual void onTTSServerClosed() {}
+    virtual void onTTSStateChanged(bool enabled) { (void)enabled; }
     virtual void onVoiceChanged(std::string voice) { (void)voice; }
 };
 
@@ -65,9 +66,9 @@ public:
     TTSSessionCallback() {}
     virtual ~TTSSessionCallback() {}
 
-    virtual void onTTSSessionCreated(uint32_t appId, uint32_t sessionId) = 0;
-    virtual void onResourceAcquired(uint32_t appId, uint32_t sessionId) = 0;
-    virtual void onResourceReleased(uint32_t appId, uint32_t sessionId) = 0;
+    virtual void onTTSSessionCreated(uint32_t appId, uint32_t sessionId) { (void)appId; (void)sessionId; }
+    virtual void onResourceAcquired(uint32_t appId, uint32_t sessionId) { (void)appId; (void)sessionId; }
+    virtual void onResourceReleased(uint32_t appId, uint32_t sessionId) { (void)appId; (void)sessionId; }
     virtual void onWillSpeak(uint32_t appId, uint32_t sessionId, SpeechData &data) { (void)appId; (void)sessionId; (void)data; }
     virtual void onSpeechStart(uint32_t appId, uint32_t sessionId, SpeechData &data) { (void)appId; (void)sessionId; (void)data; }
     virtual void onSpeechPause(uint32_t appId, uint32_t sessionId, uint32_t speechId) { (void)appId; (void)sessionId; (void)speechId; }
@@ -85,7 +86,7 @@ public:
 // But at present the implementation supports single session. So the sessionid input for
 // all the APIs, except createSession, will be omitted, the internaly maintained ID will be used.
 //
-class TTSClientPrivate;
+class TTSClientPrivateInterface;
 class TTSClient {
 public:
     static TTSClient *create(TTSConnectionCallback *connCallback, bool discardRtDispatching=false);
@@ -123,7 +124,7 @@ private:
     TTSClient(TTSConnectionCallback *client, bool discardRtDispatching=false);
     TTSClient(TTSClient&) = delete;
 
-    TTSClientPrivate *m_priv;
+    TTSClientPrivateInterface *m_priv;
 };
 
 } // namespace TTS

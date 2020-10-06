@@ -17,7 +17,8 @@
  * limitations under the License.
 */
 
-#include "TTSClientPrivate.h"
+#include "TTSClientPrivateJsonRPC.h"
+#include "TTSClientPrivateRtRemote.h"
 #include "logger.h"
 #include <mutex>
 
@@ -40,7 +41,7 @@ TTSClient *TTSClient::create(TTSConnectionCallback *callback, bool discardRtDisp
     std::lock_guard<std::mutex> lock(mutex);
 
     // Check if TTSEngine is running
-    if(isProgramRunning(TTS_ENGINE_PROGRAM_NAME)) {
+    if(getenv("TTS_USE_THUNDER_CLIENT") ? true : isProgramRunning(TTS_ENGINE_PROGRAM_NAME)) {
         TTSLOG_INFO("TTSEngine is running");
         return new TTSClient(callback, discardRtDispatching);
     } else {
@@ -50,7 +51,11 @@ TTSClient *TTSClient::create(TTSConnectionCallback *callback, bool discardRtDisp
 }
 
 TTSClient::TTSClient(TTSConnectionCallback *callback, bool discardRtDispatching) {
-    m_priv = new TTSClientPrivate(callback, discardRtDispatching);
+    if(getenv("TTS_USE_THUNDER_CLIENT")) {
+        m_priv = new TTSClientPrivateJsonRPC(callback, discardRtDispatching);
+    } else {
+        m_priv = new TTSClientPrivateRtRemote(callback, discardRtDispatching);
+    }
 }
 
 TTSClient::~TTSClient() {

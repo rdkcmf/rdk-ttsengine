@@ -17,7 +17,7 @@
  * limitations under the License.
 */
 
-#include "TTSClientPrivate.h"
+#include "TTSClientPrivateRtRemote.h"
 
 #include "logger.h"
 #include "glib_utils.h"
@@ -136,11 +136,11 @@ bool isProgramRunning(const char* name)
 }
 
 // Static Member Definition & Initialization
-std::once_flag TTSClientPrivate::m_rtRemoteInit;
-std::once_flag TTSClientPrivate::m_dispatchThreadCreated;
-std::thread *TTSClientPrivate::m_dispatchThread = NULL;
-GMainLoop *TTSClientPrivate::m_dispatcherMainLoop = NULL;
-unsigned long TTSClientPrivate::m_count = 0;
+std::once_flag TTSClientPrivateRtRemote::m_rtRemoteInit;
+std::once_flag TTSClientPrivateRtRemote::m_dispatchThreadCreated;
+std::thread *TTSClientPrivateRtRemote::m_dispatchThread = NULL;
+GMainLoop *TTSClientPrivateRtRemote::m_dispatcherMainLoop = NULL;
+unsigned long TTSClientPrivateRtRemote::m_count = 0;
 
 // --- //
 
@@ -155,7 +155,7 @@ static inline const char *policyStr(ResourceAllocationPolicy policy) {
 
 // --- //
 
-void TTSClientPrivate::InitializeRtRemote() {
+void TTSClientPrivateRtRemote::InitializeRtRemote() {
     // Log level setting
     rtLogSetLevel(getenv("TTS_CLIENT_RT_LOG_LEVEL") ? (rtLogLevel)atoi(getenv("TTS_CLIENT_RT_LOG_LEVEL")) : RT_LOG_INFO);
 
@@ -165,8 +165,8 @@ void TTSClientPrivate::InitializeRtRemote() {
     }
 }
 
-void TTSClientPrivate::rtServerCrashCB(void *data) {
-    TTSClientPrivate *self = (TTSClientPrivate *)data;
+void TTSClientPrivateRtRemote::rtServerCrashCB(void *data) {
+    TTSClientPrivateRtRemote *self = (TTSClientPrivateRtRemote *)data;
     if(self->m_callback) {
         TTSLOG_ERROR("Connection to TTSManager got closed, i.e TTSManager crashed");
         self->m_callback->onTTSServerClosed();
@@ -174,7 +174,7 @@ void TTSClientPrivate::rtServerCrashCB(void *data) {
     }
 }
 
-bool TTSClientPrivate::findRemoteObject(std::string obj_name, uint32_t timeout_ms) {
+bool TTSClientPrivateRtRemote::findRemoteObject(std::string obj_name, uint32_t timeout_ms) {
     static std::mutex mutex;
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -193,7 +193,7 @@ bool TTSClientPrivate::findRemoteObject(std::string obj_name, uint32_t timeout_m
     return false;
 }
 
-void TTSClientPrivate::connectToTTSManager() {
+void TTSClientPrivateRtRemote::connectToTTSManager() {
     static std::mutex sMutex;
     static unsigned char sTimeOut = 30;
 
@@ -289,7 +289,7 @@ void TTSClientPrivate::connectToTTSManager() {
     }
 }
 
-void TTSClientPrivate::StartDispatcherThread() {
+void TTSClientPrivateRtRemote::StartDispatcherThread() {
     // Install rt message dispatcher
     m_dispatchThread = new std::thread([]() {
         TTSLOG_INFO("Starting Dispatch thread %ld", syscall(__NR_gettid));
@@ -322,7 +322,7 @@ void TTSClientPrivate::StartDispatcherThread() {
     });
 }
 
-TTSClientPrivate::TTSClientPrivate(TTSConnectionCallback *callback, bool discardRtDispatching) :
+TTSClientPrivateRtRemote::TTSClientPrivateRtRemote(TTSConnectionCallback *callback, bool discardRtDispatching) :
     m_connected(false),
     m_serverCrashed(false),
     m_ttsEnabled(false),
@@ -334,7 +334,7 @@ TTSClientPrivate::TTSClientPrivate(TTSConnectionCallback *callback, bool discard
     m_callback(callback),
     m_callbackWrapper(new CallbackDataWrapper(this, true)),
     m_policy(INVALID_POLICY) {
-    TTSLOG_INFO("Constructing TTSClientPrivate");
+    TTSLOG_INFO("Constructing TTSClientPrivateRtRemote");
     ++m_count;
 
     // Initialize rtRemote
@@ -348,10 +348,10 @@ TTSClientPrivate::TTSClientPrivate(TTSConnectionCallback *callback, bool discard
     findRemoteObject(TTS_MANAGER_RT_OBJECT_NAME, 100);
 
     // Find TTS Engine's remote object (if not already) & do post connect initialization
-    m_startupThread = new std::thread(&TTSClientPrivate::connectToTTSManager, this);
+    m_startupThread = new std::thread(&TTSClientPrivateRtRemote::connectToTTSManager, this);
 }
 
-TTSClientPrivate::~TTSClientPrivate() {
+TTSClientPrivateRtRemote::~TTSClientPrivateRtRemote() {
     TTSLOG_INFO("Destroying TTS Client");
     cleanupConnection();
 
@@ -379,7 +379,7 @@ TTSClientPrivate::~TTSClientPrivate() {
     }
 }
 
-void TTSClientPrivate::cleanupConnection(bool serverCrash) {
+void TTSClientPrivateRtRemote::cleanupConnection(bool serverCrash) {
     TTSLOG_WARNING("Cleaning up TTS Connection");
     bool tconnected = m_connected;
     m_connected = false;
@@ -409,7 +409,7 @@ void TTSClientPrivate::cleanupConnection(bool serverCrash) {
     m_rtEventCallback = NULL;
 }
 
-TTS_Error TTSClientPrivate::enableTTS(bool enable) {
+TTS_Error TTSClientPrivateRtRemote::enableTTS(bool enable) {
     if(!m_connected) {
         TTSLOG_WARNING("Connection to TTS manager is not establised, caching input");
         if(!m_cachedEnableTTS)
@@ -427,7 +427,7 @@ TTS_Error TTSClientPrivate::enableTTS(bool enable) {
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::listVoices(std::string &language, std::vector<std::string> &voices) {
+TTS_Error TTSClientPrivateRtRemote::listVoices(std::string &language, std::vector<std::string> &voices) {
     if(m_connected) {
         rtObjectRef voicearray;
         if(m_manager.sendReturns("listVoices", rtString(language.c_str()), voicearray) != RT_OK) {
@@ -475,7 +475,7 @@ std::string toString(Configuration &configuration, const char delim) {
     return ss.str();
 }
 
-TTS_Error TTSClientPrivate::setTTSConfiguration(Configuration &config) {
+TTS_Error TTSClientPrivateRtRemote::setTTSConfiguration(Configuration &config) {
     if(!m_connected) {
         TTSLOG_WARNING("Connection to TTS manager is not establised, caching input");
         if(!m_cachedConfig)
@@ -505,7 +505,7 @@ TTS_Error TTSClientPrivate::setTTSConfiguration(Configuration &config) {
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::getTTSConfiguration(Configuration &config) {
+TTS_Error TTSClientPrivateRtRemote::getTTSConfiguration(Configuration &config) {
     if(!m_connected) {
         TTSLOG_WARNING("Connection to TTS manager is not establised");
         return TTS_FAIL;
@@ -525,7 +525,7 @@ TTS_Error TTSClientPrivate::getTTSConfiguration(Configuration &config) {
     return TTS_OK;
 }
 
-bool TTSClientPrivate::isTTSEnabled(bool force) {
+bool TTSClientPrivateRtRemote::isTTSEnabled(bool force) {
     CHECK_CONNECTION_RETURN_ON_FAIL(false);
 
     if(!force) {
@@ -543,7 +543,7 @@ bool TTSClientPrivate::isTTSEnabled(bool force) {
     }
 }
 
-bool TTSClientPrivate::isSessionActiveForApp(uint32_t appId) {
+bool TTSClientPrivateRtRemote::isSessionActiveForApp(uint32_t appId) {
     CHECK_CONNECTION_RETURN_ON_FAIL(false);
     UNUSED(appId);
 
@@ -557,7 +557,7 @@ bool TTSClientPrivate::isSessionActiveForApp(uint32_t appId) {
     return result;
 }
 
-TTS_Error TTSClientPrivate::acquireResource(uint32_t appId) {
+TTS_Error TTSClientPrivateRtRemote::acquireResource(uint32_t appId) {
     CHECK_CONNECTION_RETURN_ON_FAIL(TTS_FAIL);
 
     TTSLOG_VERBOSE("acquireResource");
@@ -576,7 +576,7 @@ TTS_Error TTSClientPrivate::acquireResource(uint32_t appId) {
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::claimResource(uint32_t appId) {
+TTS_Error TTSClientPrivateRtRemote::claimResource(uint32_t appId) {
     CHECK_CONNECTION_RETURN_ON_FAIL(TTS_FAIL);
 
     TTSLOG_VERBOSE("claimResource");
@@ -595,7 +595,7 @@ TTS_Error TTSClientPrivate::claimResource(uint32_t appId) {
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::releaseResource(uint32_t appId) {
+TTS_Error TTSClientPrivateRtRemote::releaseResource(uint32_t appId) {
     CHECK_CONNECTION_RETURN_ON_FAIL(TTS_FAIL);
 
     TTSLOG_VERBOSE("releaseResource");
@@ -614,7 +614,7 @@ TTS_Error TTSClientPrivate::releaseResource(uint32_t appId) {
     return TTS_OK;
 }
 
-void TTSClientPrivate::echoSessionID(char *sessionId) {
+void TTSClientPrivateRtRemote::echoSessionID(char *sessionId) {
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(fd>0) {
         struct sockaddr_un addr;
@@ -629,7 +629,7 @@ void TTSClientPrivate::echoSessionID(char *sessionId) {
     }
 }
 
-uint32_t TTSClientPrivate::createSession(uint32_t appId, std::string appName, TTSSessionCallback *callback) {
+uint32_t TTSClientPrivateRtRemote::createSession(uint32_t appId, std::string appName, TTSSessionCallback *callback) {
     CHECK_CONNECTION_RETURN_ON_FAIL(0);
 
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -685,7 +685,7 @@ uint32_t TTSClientPrivate::createSession(uint32_t appId, std::string appName, TT
     }
 }
 
-TTS_Error TTSClientPrivate::destroySession(uint32_t sessionId) {
+TTS_Error TTSClientPrivateRtRemote::destroySession(uint32_t sessionId) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -705,7 +705,7 @@ TTS_Error TTSClientPrivate::destroySession(uint32_t sessionId) {
     return TTS_OK;
 }
 
-bool TTSClientPrivate::isActiveSession(uint32_t sessionId, bool forcefetch) {
+bool TTSClientPrivateRtRemote::isActiveSession(uint32_t sessionId, bool forcefetch) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -726,7 +726,7 @@ bool TTSClientPrivate::isActiveSession(uint32_t sessionId, bool forcefetch) {
     return sessionInfo->m_gotResource;
 }
 
-TTS_Error TTSClientPrivate::setPreemptiveSpeak(uint32_t sessionId, bool preemptive) {
+TTS_Error TTSClientPrivateRtRemote::setPreemptiveSpeak(uint32_t sessionId, bool preemptive) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -743,7 +743,7 @@ TTS_Error TTSClientPrivate::setPreemptiveSpeak(uint32_t sessionId, bool preempti
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::requestExtendedEvents(uint32_t sessionId, uint32_t extendedEvents) {
+TTS_Error TTSClientPrivateRtRemote::requestExtendedEvents(uint32_t sessionId, uint32_t extendedEvents) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -768,7 +768,7 @@ TTS_Error TTSClientPrivate::requestExtendedEvents(uint32_t sessionId, uint32_t e
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::speak(uint32_t sessionId, SpeechData& data) {
+TTS_Error TTSClientPrivateRtRemote::speak(uint32_t sessionId, SpeechData& data) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -796,7 +796,7 @@ TTS_Error TTSClientPrivate::speak(uint32_t sessionId, SpeechData& data) {
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::abort(uint32_t sessionId, bool clearPending) {
+TTS_Error TTSClientPrivateRtRemote::abort(uint32_t sessionId, bool clearPending) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -823,7 +823,7 @@ TTS_Error TTSClientPrivate::abort(uint32_t sessionId, bool clearPending) {
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::pause(uint32_t sessionId, uint32_t speechId) {
+TTS_Error TTSClientPrivateRtRemote::pause(uint32_t sessionId, uint32_t speechId) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -846,7 +846,7 @@ TTS_Error TTSClientPrivate::pause(uint32_t sessionId, uint32_t speechId) {
     return TTS_OK;
 }
 
-TTS_Error TTSClientPrivate::resume(uint32_t sessionId, uint32_t speechId) {
+TTS_Error TTSClientPrivateRtRemote::resume(uint32_t sessionId, uint32_t speechId) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -869,7 +869,7 @@ TTS_Error TTSClientPrivate::resume(uint32_t sessionId, uint32_t speechId) {
     return TTS_OK;
 }
 
-bool TTSClientPrivate::isSpeaking(uint32_t sessionId) {
+bool TTSClientPrivateRtRemote::isSpeaking(uint32_t sessionId) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -890,7 +890,7 @@ bool TTSClientPrivate::isSpeaking(uint32_t sessionId) {
     return false;
 }
 
-TTS_Error TTSClientPrivate::getSpeechState(uint32_t sessionId, uint32_t speechId, SpeechState &state) {
+TTS_Error TTSClientPrivateRtRemote::getSpeechState(uint32_t sessionId, uint32_t speechId, SpeechState &state) {
     SessionInfo *sessionInfo;
     std::map<uint32_t, SessionInfo*>::iterator sessionItr;
 
@@ -909,7 +909,7 @@ TTS_Error TTSClientPrivate::getSpeechState(uint32_t sessionId, uint32_t speechId
     return TTS_OK;
 }
 
-rtError TTSClientPrivate::onEventCB(int numArgs, const rtValue* args, rtValue* result, void* context) {
+rtError TTSClientPrivateRtRemote::onEventCB(int numArgs, const rtValue* args, rtValue* result, void* context) {
     rtError rc = RT_OK;
 
     if(context && numArgs == 1) {
@@ -927,7 +927,7 @@ rtError TTSClientPrivate::onEventCB(int numArgs, const rtValue* args, rtValue* r
 
         // Handle Client / Session Events
         if(cbwrapper->isConnectionCBData())
-            rc = onConnectionEvent(args[0].toObject(), (TTSClientPrivate*)cbwrapper->data());
+            rc = onConnectionEvent(args[0].toObject(), (TTSClientPrivateRtRemote*)cbwrapper->data());
         else
             rc = onSessionEvent(args[0].toObject(), (SessionInfo*)cbwrapper->data());
     }
@@ -938,7 +938,7 @@ rtError TTSClientPrivate::onEventCB(int numArgs, const rtValue* args, rtValue* r
     return rc;
 }
 
-rtError TTSClientPrivate::onConnectionEvent(const rtObjectRef &event, TTSClientPrivate *client) {
+rtError TTSClientPrivateRtRemote::onConnectionEvent(const rtObjectRef &event, TTSClientPrivateRtRemote *client) {
     rtValue val;
     if(event.get("name", val) == RT_OK) {
         if (val.toString() == "tts_state_changed") {
@@ -957,7 +957,7 @@ rtError TTSClientPrivate::onConnectionEvent(const rtObjectRef &event, TTSClientP
     return RT_OK;
 }
 
-rtError TTSClientPrivate::onSessionEvent(const rtObjectRef &event, SessionInfo *sessionInfo) {
+rtError TTSClientPrivateRtRemote::onSessionEvent(const rtObjectRef &event, SessionInfo *sessionInfo) {
     rtValue val;
     rtString eventName;
     if(event.get("name", val) == RT_OK) {
