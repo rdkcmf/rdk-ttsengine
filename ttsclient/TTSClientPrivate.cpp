@@ -32,6 +32,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <iostream>
+#include <regex>
+
 // --- //
 
 namespace TTS {
@@ -444,6 +447,34 @@ TTS_Error TTSClientPrivate::listVoices(std::string &language, std::vector<std::s
     return TTS_OK;
 }
 
+bool fromString(Configuration &configuration, const std::string &str, const char delim) {
+    auto tokens = split(str, delim);
+    if(tokens.size() != 6)
+        return false;
+
+    configuration.ttsEndPoint = tokens[0];
+    configuration.ttsEndPointSecured = tokens[1];
+    configuration.language = tokens[2];
+    configuration.voice = tokens[3];
+    configuration.volume = std::stod(tokens[4]);
+    configuration.rate = std::stoi(tokens[5]);
+
+    return true;
+}
+
+std::string toString(Configuration &configuration, const char delim) {
+    std::stringstream ss;
+    ss <<
+        configuration.ttsEndPoint << delim <<
+        configuration.ttsEndPointSecured << delim <<
+        configuration.language << delim <<
+        configuration.voice << delim <<
+        std::to_string(configuration.volume) << delim <<
+        std::to_string(configuration.rate);
+
+    return ss.str();
+}
+
 TTS_Error TTSClientPrivate::setTTSConfiguration(Configuration &config) {
     if(!m_connected) {
         TTSLOG_WARNING("Connection to TTS manager is not establised, caching input");
@@ -464,15 +495,8 @@ TTS_Error TTSClientPrivate::setTTSConfiguration(Configuration &config) {
         return TTS_OK;
     }
 
-    rtObjectRef map = new rtMapObject;
-    map.set("ttsEndPoint", config.ttsEndPoint.c_str());
-    map.set("ttsEndPointSecured", config.ttsEndPointSecured.c_str());
-    map.set("language", config.language.c_str());
-    map.set("voice", config.voice.c_str());
-    map.set("volume", config.volume);
-    map.set("rate", config.rate);
-
-    rtError rc = m_manager.send("setConfiguration", map);
+    rtString configStr = toString(config, ',').c_str();
+    rtError rc = m_manager.send("setConfiguration", configStr);
     if(rc != RT_OK) {
         TTSLOG_ERROR("Couldn't set default configuration");
         return TTS_FAIL;
@@ -487,19 +511,16 @@ TTS_Error TTSClientPrivate::getTTSConfiguration(Configuration &config) {
         return TTS_FAIL;
     }
 
-    rtObjectRef map;
-    rtError rc = m_manager.sendReturns("getConfiguration", map);
+    rtString rtConfigStr;
+    rtError rc = m_manager.sendReturns("getConfiguration", rtConfigStr);
     if(rc != RT_OK) {
         TTSLOG_ERROR("Couldn't get configuration");
         return TTS_FAIL;
     }
 
-    config.ttsEndPoint = map.get<rtString>("ttsEndPoint").cString();
-    config.ttsEndPointSecured = map.get<rtString>("ttsEndPointSecured").cString();
-    config.language = map.get<rtString>("language").cString();
-    config.voice = map.get<rtString>("voice").cString();
-    config.volume = map.get<double>("volume");
-    config.rate = map.get<uint8_t>("rate");
+    std::string configStr = rtConfigStr.cString();
+    if(!fromString(config, configStr, ','))
+        TTSLOG_ERROR("Parsing configuration failed, \"%s\"", configStr.c_str());
 
     return TTS_OK;
 }

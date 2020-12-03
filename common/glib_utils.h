@@ -22,6 +22,9 @@
 #include <glib.h>
 #include <stdint.h>
 
+#include <string>
+#include <vector>
+
 namespace TTS {
 
 constexpr int eintr_maximum_attempts =100;
@@ -60,6 +63,7 @@ public:
 
 void NullCB(void*, void*);
 GSource* create_and_setup_source(int fd, SourceIOCallback ioCB, SourceDestroyCallback dCB, void* ctx);
+std::vector<std::string> split(const std::string &str, const char delim);
 
 } // namespace TTS
 

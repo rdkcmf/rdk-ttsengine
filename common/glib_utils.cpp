@@ -87,4 +87,19 @@ GSource* create_and_setup_source(int fd, SourceIOCallback IOCallBack, SourceDest
     return source;
 }
 
+std::vector<std::string> split(const std::string &str, const char delim) {
+    std::string::size_type prevPos = 0, pos = 0;
+    std::vector<std::string> tokens;
+
+    while(!str.empty() && (pos = str.find(delim, pos)) != std::string::npos) {
+        tokens.push_back(str.substr(prevPos, pos - prevPos));
+        prevPos = ++pos;
+    }
+
+    if(!str.empty() && prevPos < str.length())
+        tokens.push_back(str.substr(prevPos, pos - prevPos));
+
+    return tokens;
+}
+
 } // namespace TTS

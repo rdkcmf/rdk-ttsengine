@@ -48,11 +48,6 @@ extern GMainLoop* gLoop;
         return; \
     } } while(0)
 
-#define CHECK_RT_INPUT_AND_UPDATE(rtObj, prop, tS, evaluate) do {\
-    if(!rtObj || rtObj.get(prop, tS) != RT_OK) { \
-        TTSLOG_ERROR("%s property is not found in object", prop); \
-    }  else { evaluate; } } while(0)
-
 // Find the session information
 #define FIND_SESSION_OR_RETURN(sessionId) \
     ID_Session_Map::iterator it; \
@@ -394,21 +389,45 @@ rtError TTSManager::listVoices(rtValue language, rtObjectRef &voices) {
     return RT_OK;
 }
 
-rtError TTSManager::setConfiguration(rtObjectRef configuration) {
+bool fromString(TTSConfiguration &configuration, const std::string &str, const char delim) {
+    auto tokens = split(str, delim);
+    if(tokens.size() != 6)
+        return false;
+
+    configuration.setEndPoint(tokens[0].c_str());
+    configuration.setSecureEndPoint(tokens[1].c_str());
+    configuration.setLanguage(tokens[2].c_str());
+    configuration.setVoice(tokens[3].c_str());
+    configuration.setVolume(tokens[4].empty() ? 100 : std::stod(tokens[4]));
+    configuration.setRate(tokens[5].empty() ? 50 : std::stoi(tokens[5]));
+
+    return true;
+}
+
+std::string toString(TTSConfiguration &configuration, const char delim) {
+    std::stringstream ss;
+    ss <<
+        configuration.endPoint() << delim <<
+        configuration.secureEndPoint() << delim <<
+        configuration.language() << delim <<
+        configuration.voice() << delim <<
+        std::to_string(configuration.volume()) << delim <<
+        std::to_string(configuration.rate());
+
+    return ss.str();
+}
+
+rtError TTSManager::setConfiguration(rtString configuration) {
     TTSLOG_VERBOSE("Setting Default Configuration");
 
-    double d;
-    uint8_t ui;
-    rtString s;
     rtString v = m_defaultConfiguration.voice();
 
     m_mutex.lock();
-    CHECK_RT_INPUT_AND_UPDATE(configuration, "ttsEndPoint", s, m_defaultConfiguration.setEndPoint(s));
-    CHECK_RT_INPUT_AND_UPDATE(configuration, "ttsEndPointSecured", s, m_defaultConfiguration.setSecureEndPoint(s));
-    CHECK_RT_INPUT_AND_UPDATE(configuration, "language", s, m_defaultConfiguration.setLanguage(s));
-    CHECK_RT_INPUT_AND_UPDATE(configuration, "voice", s, m_defaultConfiguration.setVoice(s));
-    CHECK_RT_INPUT_AND_UPDATE(configuration, "volume", d, m_defaultConfiguration.setVolume(d));
-    CHECK_RT_INPUT_AND_UPDATE(configuration, "rate", ui, m_defaultConfiguration.setRate(ui));
+    std::string configStr(configuration.cString());
+    if(!fromString(m_defaultConfiguration, configStr, ',')) {
+        TTSLOG_ERROR("Invalid configuration / parsing error with input \"%s\"", configStr.c_str());
+        return RT_OK;
+    }
 
     if(m_defaultConfiguration.endPoint().isEmpty() && !m_defaultConfiguration.secureEndPoint().isEmpty())
         m_defaultConfiguration.setEndPoint(m_defaultConfiguration.secureEndPoint());
@@ -443,16 +462,12 @@ rtError TTSManager::setConfiguration(rtObjectRef configuration) {
     return RT_OK;
 }
 
-rtError TTSManager::getConfiguration(rtObjectRef &configuration) {
+rtError TTSManager::getConfiguration(rtString &configuration) {
     TTSLOG_VERBOSE("Getting Default Configuration");
 
-    configuration = new rtMapObject;
-    configuration.set("ttsEndPoint", m_defaultConfiguration.endPoint());
-    configuration.set("ttsEndPointSecured", m_defaultConfiguration.secureEndPoint());
-    configuration.set("language", m_defaultConfiguration.language());
-    configuration.set("voice", m_defaultConfiguration.voice());
-    configuration.set("volume", m_defaultConfiguration.volume());
-    configuration.set("rate", (uint8_t)m_defaultConfiguration.rate());
+    rtString rtConfigStr(toString(m_defaultConfiguration, ',').c_str());
+    configuration = rtConfigStr;
+    TTSLOG_INFO("Configuration string : %s", configuration.cString());
 
     return RT_OK;
 }
