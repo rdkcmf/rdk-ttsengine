@@ -88,6 +88,11 @@ std::string Service::getSecurityToken(const std::string &payload)
 
     static std::string endpoint;
     if(endpoint.empty()) {
+        Core::SystemInfo::GetEnvironment(_T("THUNDER_ACCESS"), endpoint);
+        TTSLOG_INFO("Thunder RPC Endpoint read from env - %s", endpoint.c_str());
+    }
+
+    if(endpoint.empty()) {
         Core::File file("/etc/WPEFramework/config.json", false);
 
         if(file.Open(true)) {
@@ -249,7 +254,7 @@ void Service::installStateChangeHandler()
     });
 }
 
-Service::Service(const char *callsign) : m_callSign(callsign ? callsign : ""), m_remoteObject(nullptr), m_active(false), m_activeQuerySuccess(false), m_worker(this)
+Service::Service(const char *callsign) : m_callSign(callsign ? callsign : ""), m_remoteObject(nullptr), m_active(false), m_activeQuerySuccess(false), m_envOverride(false), m_worker(this)
 {
     m_serviceListMutex.lock();
     m_services.push_back(this);
@@ -266,8 +271,10 @@ Service::Service(const char *callsign) : m_callSign(callsign ? callsign : ""), m
     std::replace(tokenURLEnv.begin(), tokenURLEnv.end(), '.', '_');
     Core::SystemInfo::GetEnvironment(tokenURLEnv, m_tokenPayload);
 
-    if(!m_tokenPayload.empty())
+    if(!m_tokenPayload.empty()) {
+        m_envOverride = true;
         TTSLOG_INFO("URL from env for %s is %s", tokenURLEnv.c_str(), m_tokenPayload.empty() ? "NULL" : m_tokenPayload.c_str());
+    }
 }
 
 Service::~Service()
@@ -319,8 +326,10 @@ void Service::activate()
 
 void Service::setSecurityTokenPayload(const char *payload)
 {
-    if(payload && m_tokenPayload.empty())
+    if(payload && !m_envOverride) {
+        TTSLOG_VERBOSE("Setting security token payload as %s", payload);
         m_tokenPayload = std::string(payload);
+    }
 }
 
 void Service::initialize(bool activateIfRequired)

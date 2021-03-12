@@ -122,6 +122,7 @@ protected:
     bool m_activeQuerySuccess;
     std::string m_tokenPayload;
     std::string m_token;
+    bool m_envOverride;
 
     static std::string getSecurityToken(const std::string &payload);
     static WPEFrameworkPluginPtr controller(const std::string &payload);
