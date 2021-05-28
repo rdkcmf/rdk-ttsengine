@@ -19,6 +19,10 @@
 #ifndef _SERVICES_H_
 #define _SERVICES_H_
 
+#ifndef MODULE_NAME
+#define MODULE_NAME ttsengine
+#endif
+
 #include <WPEFramework/core/core.h>
 #include <WPEFramework/plugins/Service.h>
 #undef LOG

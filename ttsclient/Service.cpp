@@ -19,6 +19,8 @@
 #include "Service.h"
 #include "logger.h"
 
+MODULE_NAME_DECLARATION(BUILD_REFERENCE);
+
 #if defined(SECURITY_TOKEN_ENABLED) && ((SECURITY_TOKEN_ENABLED == 0) || (SECURITY_TOKEN_ENABLED == false))
 #define GetSecurityToken(a, b) 0
 #define GetToken(a, b, c) 0
