@@ -55,6 +55,14 @@ TTSClientPrivateJsonRPC::TTSClientPrivateJsonRPC(TTSConnectionCallback *callback
     TextToSpeechService::Instance()->registerClient(this);
     TextToSpeechService::Instance()->restartServiceOnCrash(false);
 
+    if (Core::SystemInfo::GetEnvironment(_T("CLIENT_IDENTIFIER"), m_callsign) == true) {
+        std::string::size_type pos =  m_callsign.find(',');
+        if (pos != std::string::npos)
+        {
+            m_callsign.erase(pos,std::string::npos);
+        }
+    }
+
     if(TextToSpeechService::Instance()->isActive() && m_connectionCallback)
         m_connectionCallback->onTTSServerConnected();
 }
@@ -186,8 +194,9 @@ TTS_Error TTSClientPrivateJsonRPC::speak(uint32_t sessionId, SpeechData& data) {
     m_lastSpeechId = 0;
     JsonObject request, response;
     request["text"] = data.text;
+    request["callsign"] = m_callsign;
     if(!TextToSpeechService::Instance()->invoke("speak", request, response)) {
-        TTSLOG_ERROR("Coudn't speak, %d", m_ttsEnabled);
+        TTSLOG_ERROR("Coudn't speak, %d..Error code: %d", m_ttsEnabled,response["TTS_Status"].Number());
         return TTS_FAIL;
     }
 

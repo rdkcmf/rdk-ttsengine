@@ -162,6 +162,7 @@ private:
     uint32_t m_lastSpeechId;
     uint32_t m_appId;
     bool m_firstQuery;
+    std::string m_callsign;
 };
 
 } // namespace TTS
