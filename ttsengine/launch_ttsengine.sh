@@ -20,6 +20,10 @@
 
 killall TTSEngine
 
+if [ -f /etc/env_setup.sh ]; then
+    . /etc/env_setup.sh
+fi
+
 if [ -f /opt/SetEnv.sh ] && [ "$BUILD_TYPE" != "prod" ]; then
     . /opt/SetEnv.sh
 fi
