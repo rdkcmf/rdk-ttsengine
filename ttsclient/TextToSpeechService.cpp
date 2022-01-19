@@ -117,7 +117,7 @@ void TextToSpeechService::dispatchEvent(EventType event, const JsonObject &param
         TTSLOG_INFO("%s(SpeechEvent-%d), servicespeecid=%d", __FUNCTION__, (int)event, speechid);
     }
 
-    if(dispatch) {
+    if(dispatch && initialized()) {
         std::unique_lock<std::mutex> lock(m_mutex);
         for(ClientList::iterator it = m_clients.begin(); it != m_clients.end(); ++it) {
             switch(event) {
